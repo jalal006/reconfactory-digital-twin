@@ -9,7 +9,6 @@
 .ruff_cache
 **/__pycache__
 *.py[cod]
-CONTRIBUTING.md
 docs
 tests
 data/*

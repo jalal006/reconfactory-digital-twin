@@ -3,7 +3,7 @@
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB)
 ![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688)
 ![ROS 2](https://img.shields.io/badge/ROS%202-Jazzy-22314E)
-![Tests](https://img.shields.io/badge/tests-74%20passing-brightgreen)
+[![Tests](https://github.com/jalal006/reconfactory-digital-twin/actions/workflows/tests.yml/badge.svg)](https://github.com/jalal006/reconfactory-digital-twin/actions/workflows/tests.yml)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 A fault-aware smart factory simulation with an animated browser twin, OpenCV
@@ -195,7 +195,6 @@ docs/              Technical documentation
 - [Fault model](docs/fault_model.md)
 - [OPC UA](docs/OPC_UA.md)
 - [Demo scenarios](docs/DEMO_SCENARIOS.md)
-- [Contributing](CONTRIBUTING.md)
 
 ## Limitations
 
