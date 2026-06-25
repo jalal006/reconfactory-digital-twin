@@ -1,0 +1,5 @@
+factory:
+  name: ReConFactory Digital Twin
+  tick_interval_seconds: 0.75
+  input_policy: operator_or_script
+  recovery_policy: reroute_when_safe_else_pause

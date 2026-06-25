@@ -1,0 +1,50 @@
+machines:
+  conveyor_main:
+    name: Main Conveyor
+    machine_type: conveyor
+    capabilities:
+      - transport
+    processing_time:
+      transport: 1
+    input_location: line_buffer
+    output_location: line_buffer
+  vision:
+    name: Vision Inspection
+    machine_type: inspection
+    capabilities:
+      - visual_inspection
+    processing_time:
+      visual_inspection: 1
+    input_location: input_queue
+    output_location: post_vision_buffer
+  station_a:
+    name: Processing A
+    machine_type: processing
+    capabilities:
+      - drill
+      - assemble
+    processing_time:
+      drill: 3
+      assemble: 4
+    input_location: processing_buffer
+    output_location: quality_buffer
+  station_b:
+    name: Processing B
+    machine_type: processing
+    capabilities:
+      - drill
+      - polish
+    processing_time:
+      drill: 4
+      polish: 3
+    input_location: processing_buffer
+    output_location: quality_buffer
+  quality:
+    name: Quality Control
+    machine_type: quality
+    capabilities:
+      - quality_check
+    processing_time:
+      quality_check: 2
+    input_location: quality_buffer
+    output_location: sorter

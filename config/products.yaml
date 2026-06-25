@@ -1,0 +1,28 @@
+products:
+  red_block:
+    display_name: Red Block
+    required_processes:
+      - visual_inspection
+      - drill
+      - quality_check
+    inspection_rule: Correct shape and colour
+    color: "#ef4444"
+    shape: block
+  blue_cylinder:
+    display_name: Blue Cylinder
+    required_processes:
+      - visual_inspection
+      - polish
+      - quality_check
+    inspection_rule: Correct diameter and orientation
+    color: "#3b82f6"
+    shape: cylinder
+  green_component:
+    display_name: Green Component
+    required_processes:
+      - visual_inspection
+      - assemble
+      - quality_check
+    inspection_rule: Required part present
+    color: "#22c55e"
+    shape: component

@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ReConFactory Digital Twin</title>
+    <link rel="stylesheet" href="/static/styles.css?v=20260620-statistics-view" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>ReConFactory Digital Twin</h1>
+        <p>Fault-aware smart production line with automatic rerouting.</p>
+      </div>
+      <div class="status-pill" id="runState">Offline</div>
+    </header>
+
+    <main class="layout">
+      <section class="simulation-panel" aria-label="Factory simulation">
+        <div class="panel-head">
+          <div>
+            <h2>Live Factory</h2>
+            <p id="lastDecision">Waiting for data...</p>
+          </div>
+          <div class="panel-actions">
+            <div class="view-tabs" aria-label="Factory visual selection">
+              <button type="button" class="view-tab active" data-visual-view="main">Main Visual</button>
+              <button type="button" class="view-tab" data-visual-view="stats">Show Statistics</button>
+            </div>
+            <div class="tick">Tick <span id="tickValue">0</span></div>
+          </div>
+        </div>
+        <div class="visual-stage">
+          <canvas id="factoryCanvas" class="visual-view" width="1280" height="720" aria-label="Live browser factory simulation"></canvas>
+          <section id="statisticsView" class="visual-view stats-view" aria-label="Production line statistics" hidden>
+            <section class="metrics-panel">
+              <h2>Production Metrics</h2>
+              <div class="metric-grid" id="metricGrid"></div>
+              <div class="experiment-panel">
+                <div>
+                  <h2>Recovery Experiment</h2>
+                  <p class="muted">Compare fail-stop behavior against automatic rerouting.</p>
+                </div>
+                <button id="runExperimentBtn" class="secondary">Run Comparison</button>
+                <div id="experimentResult"></div>
+              </div>
+            </section>
+          </section>
+        </div>
+      </section>
+
+      <aside class="control-panel" aria-label="Factory controls">
+        <section>
+          <h2>Controls</h2>
+          <div class="button-row">
+            <button id="runToggleBtn">Start</button>
+            <button id="resetBtn" class="secondary">Reset</button>
+          </div>
+        </section>
+
+        <section>
+          <h2>Add Product</h2>
+          <label for="productType">Product</label>
+          <select id="productType">
+            <option value="red_block">Red Block - Drill</option>
+            <option value="blue_cylinder">Blue Cylinder - Polish</option>
+            <option value="green_component">Green Component - Assemble</option>
+          </select>
+          <label for="defectType">Defect</label>
+          <select id="defectType">
+            <option value="">None</option>
+            <option value="wrong_colour">Wrong colour</option>
+            <option value="wrong_shape">Wrong shape</option>
+            <option value="missing_part">Missing part</option>
+            <option value="quality_defect">Final quality defect</option>
+            <option value="unidentified">Unidentified</option>
+          </select>
+          <button id="addProductBtn">Add Product</button>
+        </section>
+
+        <section>
+          <h2>Fault Injection</h2>
+          <div class="fault-grid">
+            <button data-machine="station_a" data-fault="overheat">Station A Overheat</button>
+            <button data-machine="station_b" data-fault="jam">Station B Jam</button>
+            <button data-machine="station_a" data-fault="sensor_failure">Break Presence Sensor</button>
+            <button data-machine="vision" data-fault="camera_failure">Camera Failure</button>
+            <button data-machine="station_b" data-fault="timeout">Processing Timeout</button>
+            <button data-machine="quality" data-fault="communication_loss">Communication Timeout</button>
+            <button data-machine="conveyor_main" data-fault="jam">Conveyor Jam</button>
+          </div>
+        </section>
+
+        <section>
+          <h2>Recovery</h2>
+          <div id="recoverButtons" class="recover-grid"></div>
+        </section>
+
+        <section>
+          <h2>Integrations</h2>
+          <div id="integrationList" class="integration-list">
+            <p class="muted">Checking runtime tools...</p>
+          </div>
+          <button id="refreshIntegrationsBtn" class="secondary">Refresh Integrations</button>
+        </section>
+      </aside>
+
+      <section class="list-panel">
+        <div class="list-column">
+          <h2>Machines</h2>
+          <div id="machineList"></div>
+        </div>
+        <div class="list-column">
+          <h2>Products</h2>
+          <div id="productList"></div>
+        </div>
+        <div class="list-column">
+          <h2>Event Log</h2>
+          <div id="eventLog"></div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/static/app.js?v=20260620-statistics-view"></script>
+  </body>
+</html>

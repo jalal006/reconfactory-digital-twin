@@ -1,0 +1,5 @@
+fault_rules:
+  temperature_limit_c: 78.0
+  vibration_limit_mm_s: 3.2
+  heartbeat_timeout_s: 5.0
+  process_timeout_ticks: 8

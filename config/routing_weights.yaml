@@ -1,0 +1,5 @@
+routing_weights:
+  processing_time: 1.0
+  utilization: 0.15
+  station_a_preference: 0.0
+  station_b_preference: 0.0

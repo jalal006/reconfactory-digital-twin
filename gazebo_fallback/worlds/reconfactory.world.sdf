@@ -1,0 +1,378 @@
+<?xml version="1.0" ?>
+<sdf version="1.10">
+  <world name="reconfactory_world">
+    <physics name="default_physics" type="ode">
+      <max_step_size>0.01</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <scene>
+      <ambient>0.72 0.76 0.82 1</ambient>
+      <background>0.86 0.91 0.96 1</background>
+      <shadows>true</shadows>
+    </scene>
+
+    <gui fullscreen="false">
+      <camera name="user_camera">
+        <pose>4.8 -7.8 5.2 0 0.58 0.68</pose>
+      </camera>
+    </gui>
+
+    <light name="sun" type="directional">
+      <pose>0 0 9 0 0 0</pose>
+      <diffuse>0.95 0.95 0.9 1</diffuse>
+      <specular>0.25 0.25 0.25 1</specular>
+      <direction>-0.45 0.25 -1</direction>
+    </light>
+
+    <light name="factory_area_light" type="point">
+      <pose>4 0 5 0 0 0</pose>
+      <diffuse>0.8 0.86 1.0 1</diffuse>
+      <specular>0.3 0.3 0.3 1</specular>
+      <attenuation>
+        <range>15</range>
+        <constant>0.8</constant>
+        <linear>0.02</linear>
+        <quadratic>0.002</quadratic>
+      </attenuation>
+    </light>
+
+    <model name="factory_floor">
+      <static>true</static>
+      <pose>4 0 -0.03 0 0 0</pose>
+      <link name="floor_link">
+        <collision name="collision">
+          <geometry><box><size>10.5 5.5 0.06</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>10.5 5.5 0.06</size></box></geometry>
+          <material>
+            <ambient>0.78 0.82 0.86 1</ambient>
+            <diffuse>0.78 0.82 0.86 1</diffuse>
+            <specular>0.12 0.12 0.12 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="factory_shell_and_safety_details">
+      <static>true</static>
+      <pose>0 0 0 0 0 0</pose>
+      <link name="details">
+        <visual name="back_wall">
+          <pose>4 2.78 0.72 0 0 0</pose>
+          <geometry><box><size>10.5 0.08 1.5</size></box></geometry>
+          <material><ambient>0.72 0.78 0.84 1</ambient><diffuse>0.72 0.78 0.84 1</diffuse></material>
+        </visual>
+        <visual name="left_wall">
+          <pose>-1.28 0 0.72 0 0 0</pose>
+          <geometry><box><size>0.08 5.55 1.5</size></box></geometry>
+          <material><ambient>0.72 0.78 0.84 1</ambient><diffuse>0.72 0.78 0.84 1</diffuse></material>
+        </visual>
+        <visual name="right_wall">
+          <pose>9.28 0 0.72 0 0 0</pose>
+          <geometry><box><size>0.08 5.55 1.5</size></box></geometry>
+          <material><ambient>0.72 0.78 0.84 1</ambient><diffuse>0.72 0.78 0.84 1</diffuse></material>
+        </visual>
+        <visual name="operator_walkway">
+          <pose>4 -2.22 0.02 0 0 0</pose>
+          <geometry><box><size>9.7 0.42 0.025</size></box></geometry>
+          <material><ambient>0.96 0.72 0.16 1</ambient><diffuse>0.96 0.72 0.16 1</diffuse></material>
+        </visual>
+        <visual name="walkway_center">
+          <pose>4 -2.22 0.04 0 0 0</pose>
+          <geometry><box><size>9.4 0.16 0.025</size></box></geometry>
+          <material><ambient>0.08 0.09 0.10 1</ambient><diffuse>0.08 0.09 0.10 1</diffuse></material>
+        </visual>
+        <visual name="input_zone_marking">
+          <pose>0 0 0.015 0 0 0</pose>
+          <geometry><box><size>1.0 1.0 0.02</size></box></geometry>
+          <material><ambient>0.72 0.70 0.66 1</ambient><diffuse>0.72 0.70 0.66 1</diffuse></material>
+        </visual>
+        <visual name="cell_a_zone_marking">
+          <pose>4 1.25 0.015 0 0 0</pose>
+          <geometry><box><size>1.55 1.35 0.02</size></box></geometry>
+          <material><ambient>0.68 0.66 0.62 1</ambient><diffuse>0.68 0.66 0.62 1</diffuse></material>
+        </visual>
+        <visual name="cell_b_zone_marking">
+          <pose>4 -1.25 0.015 0 0 0</pose>
+          <geometry><box><size>1.55 1.35 0.02</size></box></geometry>
+          <material><ambient>0.68 0.66 0.62 1</ambient><diffuse>0.68 0.66 0.62 1</diffuse></material>
+        </visual>
+        <visual name="quality_zone_marking">
+          <pose>6.2 0 0.015 0 0 0</pose>
+          <geometry><box><size>1.5 1.3 0.02</size></box></geometry>
+          <material><ambient>0.70 0.67 0.60 1</ambient><diffuse>0.70 0.67 0.60 1</diffuse></material>
+        </visual>
+        <visual name="overhead_light_1"><pose>1.2 0 2.7 0 0 0</pose><geometry><box><size>1.4 0.16 0.05</size></box></geometry><material><ambient>1 1 0.82 1</ambient><diffuse>1 1 0.82 1</diffuse><emissive>0.55 0.55 0.35 1</emissive></material></visual>
+        <visual name="overhead_light_2"><pose>4.0 0 2.7 0 0 0</pose><geometry><box><size>1.4 0.16 0.05</size></box></geometry><material><ambient>1 1 0.82 1</ambient><diffuse>1 1 0.82 1</diffuse><emissive>0.55 0.55 0.35 1</emissive></material></visual>
+        <visual name="overhead_light_3"><pose>6.8 0 2.7 0 0 0</pose><geometry><box><size>1.4 0.16 0.05</size></box></geometry><material><ambient>1 1 0.82 1</ambient><diffuse>1 1 0.82 1</diffuse><emissive>0.55 0.55 0.35 1</emissive></material></visual>
+      </link>
+    </model>
+
+    <model name="conveyor_rollers_supports_and_machine_panels">
+      <static>true</static>
+      <pose>0 0 0 0 0 0</pose>
+      <link name="details">
+        <visual name="main_roller_1"><pose>0.35 0 0.355 0 0 0</pose><geometry><box><size>0.04 0.42 0.035</size></box></geometry><material><ambient>0.78 0.84 0.9 1</ambient><diffuse>0.78 0.84 0.9 1</diffuse></material></visual>
+        <visual name="main_roller_2"><pose>0.7 0 0.355 0 0 0</pose><geometry><box><size>0.04 0.42 0.035</size></box></geometry><material><ambient>0.78 0.84 0.9 1</ambient><diffuse>0.78 0.84 0.9 1</diffuse></material></visual>
+        <visual name="main_roller_3"><pose>1.05 0 0.355 0 0 0</pose><geometry><box><size>0.04 0.42 0.035</size></box></geometry><material><ambient>0.78 0.84 0.9 1</ambient><diffuse>0.78 0.84 0.9 1</diffuse></material></visual>
+        <visual name="main_roller_4"><pose>1.4 0 0.355 0 0 0</pose><geometry><box><size>0.04 0.42 0.035</size></box></geometry><material><ambient>0.78 0.84 0.9 1</ambient><diffuse>0.78 0.84 0.9 1</diffuse></material></visual>
+        <visual name="main_roller_5"><pose>1.75 0 0.355 0 0 0</pose><geometry><box><size>0.04 0.42 0.035</size></box></geometry><material><ambient>0.78 0.84 0.9 1</ambient><diffuse>0.78 0.84 0.9 1</diffuse></material></visual>
+        <visual name="out_roller_1"><pose>6.65 0 0.355 0 0 0</pose><geometry><box><size>0.04 0.42 0.035</size></box></geometry><material><ambient>0.78 0.84 0.9 1</ambient><diffuse>0.78 0.84 0.9 1</diffuse></material></visual>
+        <visual name="out_roller_2"><pose>7.05 0 0.355 0 0 0</pose><geometry><box><size>0.04 0.42 0.035</size></box></geometry><material><ambient>0.78 0.84 0.9 1</ambient><diffuse>0.78 0.84 0.9 1</diffuse></material></visual>
+        <visual name="out_roller_3"><pose>7.45 0 0.355 0 0 0</pose><geometry><box><size>0.04 0.42 0.035</size></box></geometry><material><ambient>0.78 0.84 0.9 1</ambient><diffuse>0.78 0.84 0.9 1</diffuse></material></visual>
+        <visual name="out_roller_4"><pose>7.85 0 0.355 0 0 0</pose><geometry><box><size>0.04 0.42 0.035</size></box></geometry><material><ambient>0.78 0.84 0.9 1</ambient><diffuse>0.78 0.84 0.9 1</diffuse></material></visual>
+        <visual name="leg_1"><pose>0.35 0.23 0.0 0 0 0</pose><geometry><box><size>0.05 0.05 0.32</size></box></geometry><material><ambient>0.18 0.23 0.3 1</ambient><diffuse>0.18 0.23 0.3 1</diffuse></material></visual>
+        <visual name="leg_2"><pose>1.75 -0.23 0.0 0 0 0</pose><geometry><box><size>0.05 0.05 0.32</size></box></geometry><material><ambient>0.18 0.23 0.3 1</ambient><diffuse>0.18 0.23 0.3 1</diffuse></material></visual>
+        <visual name="leg_3"><pose>6.65 0.23 0.0 0 0 0</pose><geometry><box><size>0.05 0.05 0.32</size></box></geometry><material><ambient>0.18 0.23 0.3 1</ambient><diffuse>0.18 0.23 0.3 1</diffuse></material></visual>
+        <visual name="leg_4"><pose>7.85 -0.23 0.0 0 0 0</pose><geometry><box><size>0.05 0.05 0.32</size></box></geometry><material><ambient>0.18 0.23 0.3 1</ambient><diffuse>0.18 0.23 0.3 1</diffuse></material></visual>
+        <visual name="plc_cabinet">
+          <pose>3.0 2.05 0.55 0 0 0</pose>
+          <geometry><box><size>0.55 0.28 1.1</size></box></geometry>
+          <material><ambient>0.16 0.21 0.28 1</ambient><diffuse>0.16 0.21 0.28 1</diffuse></material>
+        </visual>
+        <visual name="drill_head">
+          <pose>4.0 1.25 1.05 0 0 0</pose>
+          <geometry><cylinder><radius>0.08</radius><length>0.45</length></cylinder></geometry>
+          <material><ambient>0.08 0.1 0.12 1</ambient><diffuse>0.08 0.1 0.12 1</diffuse></material>
+        </visual>
+        <visual name="polish_wheel">
+          <pose>4.0 -1.25 0.96 1.5708 0 0</pose>
+          <geometry><cylinder><radius>0.22</radius><length>0.12</length></cylinder></geometry>
+          <material><ambient>0.74 0.78 0.82 1</ambient><diffuse>0.74 0.78 0.82 1</diffuse></material>
+        </visual>
+        <visual name="quality_scan_arch_top">
+          <pose>6.2 0 1.05 0 0 0</pose>
+          <geometry><box><size>0.95 0.12 0.12</size></box></geometry>
+          <material><ambient>0.1 0.12 0.15 1</ambient><diffuse>0.1 0.12 0.15 1</diffuse></material>
+        </visual>
+        <visual name="quality_scan_arch_left">
+          <pose>5.78 0 0.62 0 0 0</pose>
+          <geometry><box><size>0.08 0.12 0.86</size></box></geometry>
+          <material><ambient>0.1 0.12 0.15 1</ambient><diffuse>0.1 0.12 0.15 1</diffuse></material>
+        </visual>
+        <visual name="quality_scan_arch_right">
+          <pose>6.62 0 0.62 0 0 0</pose>
+          <geometry><box><size>0.08 0.12 0.86</size></box></geometry>
+          <material><ambient>0.1 0.12 0.15 1</ambient><diffuse>0.1 0.12 0.15 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Main input, routing branches, and output conveyors. -->
+    <model name="conveyor_input_to_vision">
+      <static>true</static>
+      <pose>1.05 0 0.24 0 0 0</pose>
+      <link name="body">
+        <collision name="collision"><geometry><box><size>2.1 0.32 0.16</size></box></geometry></collision>
+        <visual name="belt"><geometry><box><size>2.1 0.32 0.16</size></box></geometry><material><ambient>0.17 0.24 0.32 1</ambient><diffuse>0.17 0.24 0.32 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="junction_to_station_a">
+      <static>true</static>
+      <pose>2.9 0.62 0.24 0 0 0.55</pose>
+      <link name="body">
+        <collision name="collision"><geometry><box><size>1.9 0.32 0.16</size></box></geometry></collision>
+        <visual name="belt"><geometry><box><size>1.9 0.32 0.16</size></box></geometry><material><ambient>0.17 0.24 0.32 1</ambient><diffuse>0.17 0.24 0.32 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="junction_to_station_b">
+      <static>true</static>
+      <pose>2.9 -0.62 0.24 0 0 -0.55</pose>
+      <link name="body">
+        <collision name="collision"><geometry><box><size>1.9 0.32 0.16</size></box></geometry></collision>
+        <visual name="belt"><geometry><box><size>1.9 0.32 0.16</size></box></geometry><material><ambient>0.17 0.24 0.32 1</ambient><diffuse>0.17 0.24 0.32 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="station_a_to_quality">
+      <static>true</static>
+      <pose>5.1 0.62 0.24 0 0 -0.55</pose>
+      <link name="body">
+        <collision name="collision"><geometry><box><size>1.9 0.28 0.16</size></box></geometry></collision>
+        <visual name="belt"><geometry><box><size>1.9 0.28 0.16</size></box></geometry><material><ambient>0.17 0.24 0.32 1</ambient><diffuse>0.17 0.24 0.32 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="station_b_to_quality">
+      <static>true</static>
+      <pose>5.1 -0.62 0.24 0 0 0.55</pose>
+      <link name="body">
+        <collision name="collision"><geometry><box><size>1.9 0.28 0.16</size></box></geometry></collision>
+        <visual name="belt"><geometry><box><size>1.9 0.28 0.16</size></box></geometry><material><ambient>0.17 0.24 0.32 1</ambient><diffuse>0.17 0.24 0.32 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="quality_to_outputs">
+      <static>true</static>
+      <pose>7.25 0 0.24 0 0 0</pose>
+      <link name="body">
+        <collision name="collision"><geometry><box><size>1.8 0.32 0.16</size></box></geometry></collision>
+        <visual name="belt"><geometry><box><size>1.8 0.32 0.16</size></box></geometry><material><ambient>0.17 0.24 0.32 1</ambient><diffuse>0.17 0.24 0.32 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <!-- Stations use distinct colors so faults and routing are understandable from a screenshot. -->
+    <model name="input_station">
+      <static>true</static>
+      <pose>0 0 0.32 0 0 0</pose>
+      <link name="body">
+        <visual name="low_tray"><pose>0 0 -0.06 0 0 0</pose><geometry><box><size>0.9 0.72 0.08</size></box></geometry><material><ambient>0.50 0.49 0.46 1</ambient><diffuse>0.58 0.56 0.52 1</diffuse></material></visual>
+        <visual name="rear_lip"><pose>0 0.36 0.14 0 0 0</pose><geometry><box><size>0.9 0.05 0.34</size></box></geometry><material><ambient>0.36 0.35 0.33 1</ambient><diffuse>0.44 0.42 0.39 1</diffuse></material></visual>
+        <visual name="left_lip"><pose>-0.45 0 0.10 0 0 0</pose><geometry><box><size>0.05 0.72 0.26</size></box></geometry><material><ambient>0.36 0.35 0.33 1</ambient><diffuse>0.44 0.42 0.39 1</diffuse></material></visual>
+        <visual name="right_lip"><pose>0.45 0 0.10 0 0 0</pose><geometry><box><size>0.05 0.72 0.26</size></box></geometry><material><ambient>0.36 0.35 0.33 1</ambient><diffuse>0.44 0.42 0.39 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="vision_camera_station">
+      <static>true</static>
+      <pose>2.0 0 0.42 0 0 0</pose>
+      <link name="body">
+        <visual name="inspection_table"><pose>0 0 -0.05 0 0 0</pose><geometry><box><size>0.95 0.72 0.08</size></box></geometry><material><ambient>0.50 0.49 0.46 1</ambient><diffuse>0.58 0.56 0.52 1</diffuse></material></visual>
+        <visual name="left_post"><pose>-0.42 0.32 0.34 0 0 0</pose><geometry><box><size>0.05 0.05 0.72</size></box></geometry><material><ambient>0.12 0.13 0.14 1</ambient><diffuse>0.14 0.15 0.16 1</diffuse></material></visual>
+        <visual name="right_post"><pose>0.42 0.32 0.34 0 0 0</pose><geometry><box><size>0.05 0.05 0.72</size></box></geometry><material><ambient>0.12 0.13 0.14 1</ambient><diffuse>0.14 0.15 0.16 1</diffuse></material></visual>
+        <visual name="top_bar"><pose>0 0.32 0.72 0 0 0</pose><geometry><box><size>0.9 0.06 0.08</size></box></geometry><material><ambient>0.12 0.13 0.14 1</ambient><diffuse>0.14 0.15 0.16 1</diffuse></material></visual>
+        <visual name="camera_pole"><pose>0 0 0.65 0 0 0</pose><geometry><cylinder><radius>0.05</radius><length>1.2</length></cylinder></geometry><material><ambient>0.08 0.09 0.1 1</ambient><diffuse>0.08 0.09 0.1 1</diffuse></material></visual>
+        <visual name="camera_head"><pose>0 -0.18 1.25 0 0 0</pose><geometry><box><size>0.32 0.18 0.18</size></box></geometry><material><ambient>0.02 0.02 0.03 1</ambient><diffuse>0.02 0.02 0.03 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="processing_station_a">
+      <static>true</static>
+      <pose>4.0 1.25 0.45 0 0 0</pose>
+      <link name="body">
+        <visual name="work_plate"><pose>0 0 -0.05 0 0 0</pose><geometry><box><size>1.0 0.9 0.08</size></box></geometry><material><ambient>0.40 0.39 0.36 1</ambient><diffuse>0.48 0.46 0.42 1</diffuse></material></visual>
+        <visual name="rear_panel"><pose>0 0.45 0.34 0 0 0</pose><geometry><box><size>1.0 0.06 0.76</size></box></geometry><material><ambient>0.30 0.29 0.27 1</ambient><diffuse>0.38 0.36 0.33 1</diffuse></material></visual>
+        <visual name="left_front_post"><pose>-0.48 -0.40 0.34 0 0 0</pose><geometry><box><size>0.055 0.055 0.76</size></box></geometry><material><ambient>0.12 0.13 0.14 1</ambient><diffuse>0.14 0.15 0.16 1</diffuse></material></visual>
+        <visual name="right_front_post"><pose>0.48 -0.40 0.34 0 0 0</pose><geometry><box><size>0.055 0.055 0.76</size></box></geometry><material><ambient>0.12 0.13 0.14 1</ambient><diffuse>0.14 0.15 0.16 1</diffuse></material></visual>
+        <visual name="top_frame"><pose>0 0 0.74 0 0 0</pose><geometry><box><size>1.02 0.08 0.08</size></box></geometry><material><ambient>0.12 0.13 0.14 1</ambient><diffuse>0.14 0.15 0.16 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="processing_station_b">
+      <static>true</static>
+      <pose>4.0 -1.25 0.45 0 0 0</pose>
+      <link name="body">
+        <visual name="work_plate"><pose>0 0 -0.05 0 0 0</pose><geometry><box><size>1.0 0.9 0.08</size></box></geometry><material><ambient>0.40 0.39 0.36 1</ambient><diffuse>0.48 0.46 0.42 1</diffuse></material></visual>
+        <visual name="rear_panel"><pose>0 -0.45 0.34 0 0 0</pose><geometry><box><size>1.0 0.06 0.76</size></box></geometry><material><ambient>0.30 0.29 0.27 1</ambient><diffuse>0.38 0.36 0.33 1</diffuse></material></visual>
+        <visual name="left_front_post"><pose>-0.48 0.40 0.34 0 0 0</pose><geometry><box><size>0.055 0.055 0.76</size></box></geometry><material><ambient>0.12 0.13 0.14 1</ambient><diffuse>0.14 0.15 0.16 1</diffuse></material></visual>
+        <visual name="right_front_post"><pose>0.48 0.40 0.34 0 0 0</pose><geometry><box><size>0.055 0.055 0.76</size></box></geometry><material><ambient>0.12 0.13 0.14 1</ambient><diffuse>0.14 0.15 0.16 1</diffuse></material></visual>
+        <visual name="top_frame"><pose>0 0 0.74 0 0 0</pose><geometry><box><size>1.02 0.08 0.08</size></box></geometry><material><ambient>0.12 0.13 0.14 1</ambient><diffuse>0.14 0.15 0.16 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="quality_control_station">
+      <static>true</static>
+      <pose>6.2 0 0.42 0 0 0</pose>
+      <link name="body">
+        <visual name="scan_table"><pose>0 0 -0.04 0 0 0</pose><geometry><box><size>0.95 0.82 0.08</size></box></geometry><material><ambient>0.40 0.38 0.34 1</ambient><diffuse>0.50 0.47 0.42 1</diffuse></material></visual>
+        <visual name="left_arch"><pose>-0.43 0 0.38 0 0 0</pose><geometry><box><size>0.06 0.10 0.86</size></box></geometry><material><ambient>0.11 0.12 0.14 1</ambient><diffuse>0.13 0.14 0.16 1</diffuse></material></visual>
+        <visual name="right_arch"><pose>0.43 0 0.38 0 0 0</pose><geometry><box><size>0.06 0.10 0.86</size></box></geometry><material><ambient>0.11 0.12 0.14 1</ambient><diffuse>0.13 0.14 0.16 1</diffuse></material></visual>
+        <visual name="top_arch"><pose>0 0 0.82 0 0 0</pose><geometry><box><size>0.92 0.10 0.08</size></box></geometry><material><ambient>0.11 0.12 0.14 1</ambient><diffuse>0.13 0.14 0.16 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="accepted_output_bin">
+      <static>true</static>
+      <pose>8.45 0.72 0.25 0 0 0</pose>
+      <link name="body">
+        <visual name="tray"><pose>0 0 0 0 0 0</pose><geometry><box><size>0.88 0.78 0.10</size></box></geometry><material><ambient>0.18 0.43 0.25 1</ambient><diffuse>0.22 0.55 0.31 1</diffuse></material></visual>
+        <visual name="back_lip"><pose>0 0.38 0.18 0 0 0</pose><geometry><box><size>0.88 0.05 0.36</size></box></geometry><material><ambient>0.12 0.65 0.28 1</ambient><diffuse>0.16 0.8 0.36 1</diffuse></material></visual>
+        <visual name="side_lip_l"><pose>-0.44 0 0.14 0 0 0</pose><geometry><box><size>0.05 0.78 0.28</size></box></geometry><material><ambient>0.12 0.65 0.28 1</ambient><diffuse>0.16 0.8 0.36 1</diffuse></material></visual>
+        <visual name="side_lip_r"><pose>0.44 0 0.14 0 0 0</pose><geometry><box><size>0.05 0.78 0.28</size></box></geometry><material><ambient>0.12 0.65 0.28 1</ambient><diffuse>0.16 0.8 0.36 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="reject_output_bin">
+      <static>true</static>
+      <pose>8.45 -0.72 0.25 0 0 0</pose>
+      <link name="body">
+        <visual name="tray"><pose>0 0 0 0 0 0</pose><geometry><box><size>0.88 0.78 0.10</size></box></geometry><material><ambient>0.43 0.22 0.18 1</ambient><diffuse>0.55 0.28 0.22 1</diffuse></material></visual>
+        <visual name="back_lip"><pose>0 -0.38 0.18 0 0 0</pose><geometry><box><size>0.88 0.05 0.36</size></box></geometry><material><ambient>0.65 0.16 0.12 1</ambient><diffuse>0.82 0.20 0.16 1</diffuse></material></visual>
+        <visual name="side_lip_l"><pose>-0.44 0 0.14 0 0 0</pose><geometry><box><size>0.05 0.78 0.28</size></box></geometry><material><ambient>0.65 0.16 0.12 1</ambient><diffuse>0.82 0.20 0.16 1</diffuse></material></visual>
+        <visual name="side_lip_r"><pose>0.44 0 0.14 0 0 0</pose><geometry><box><size>0.05 0.78 0.28</size></box></geometry><material><ambient>0.65 0.16 0.12 1</ambient><diffuse>0.82 0.20 0.16 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="factory_realism_detail_pack">
+      <static>true</static>
+      <pose>0 0 0 0 0 0</pose>
+      <link name="details">
+        <!-- Conveyor guard rails and support frames. -->
+        <visual name="input_left_guard"><pose>1.05 0.28 0.43 0 0 0</pose><geometry><box><size>2.15 0.045 0.14</size></box></geometry><material><ambient>0.08 0.10 0.11 1</ambient><diffuse>0.10 0.12 0.13 1</diffuse></material></visual>
+        <visual name="input_right_guard"><pose>1.05 -0.28 0.43 0 0 0</pose><geometry><box><size>2.15 0.045 0.14</size></box></geometry><material><ambient>0.08 0.10 0.11 1</ambient><diffuse>0.10 0.12 0.13 1</diffuse></material></visual>
+        <visual name="output_left_guard"><pose>7.25 0.28 0.43 0 0 0</pose><geometry><box><size>1.85 0.045 0.14</size></box></geometry><material><ambient>0.08 0.10 0.11 1</ambient><diffuse>0.10 0.12 0.13 1</diffuse></material></visual>
+        <visual name="output_right_guard"><pose>7.25 -0.28 0.43 0 0 0</pose><geometry><box><size>1.85 0.045 0.14</size></box></geometry><material><ambient>0.08 0.10 0.11 1</ambient><diffuse>0.10 0.12 0.13 1</diffuse></material></visual>
+        <visual name="a_feed_left_guard"><pose>2.9 0.89 0.43 0 0 0.55</pose><geometry><box><size>1.95 0.045 0.14</size></box></geometry><material><ambient>0.08 0.10 0.11 1</ambient><diffuse>0.10 0.12 0.13 1</diffuse></material></visual>
+        <visual name="a_feed_right_guard"><pose>2.9 0.35 0.43 0 0 0.55</pose><geometry><box><size>1.95 0.045 0.14</size></box></geometry><material><ambient>0.08 0.10 0.11 1</ambient><diffuse>0.10 0.12 0.13 1</diffuse></material></visual>
+        <visual name="b_feed_left_guard"><pose>2.9 -0.35 0.43 0 0 -0.55</pose><geometry><box><size>1.95 0.045 0.14</size></box></geometry><material><ambient>0.08 0.10 0.11 1</ambient><diffuse>0.10 0.12 0.13 1</diffuse></material></visual>
+        <visual name="b_feed_right_guard"><pose>2.9 -0.89 0.43 0 0 -0.55</pose><geometry><box><size>1.95 0.045 0.14</size></box></geometry><material><ambient>0.08 0.10 0.11 1</ambient><diffuse>0.10 0.12 0.13 1</diffuse></material></visual>
+        <visual name="a_return_left_guard"><pose>5.1 0.89 0.43 0 0 -0.55</pose><geometry><box><size>1.95 0.045 0.14</size></box></geometry><material><ambient>0.08 0.10 0.11 1</ambient><diffuse>0.10 0.12 0.13 1</diffuse></material></visual>
+        <visual name="a_return_right_guard"><pose>5.1 0.35 0.43 0 0 -0.55</pose><geometry><box><size>1.95 0.045 0.14</size></box></geometry><material><ambient>0.08 0.10 0.11 1</ambient><diffuse>0.10 0.12 0.13 1</diffuse></material></visual>
+        <visual name="b_return_left_guard"><pose>5.1 -0.35 0.43 0 0 0.55</pose><geometry><box><size>1.95 0.045 0.14</size></box></geometry><material><ambient>0.08 0.10 0.11 1</ambient><diffuse>0.10 0.12 0.13 1</diffuse></material></visual>
+        <visual name="b_return_right_guard"><pose>5.1 -0.89 0.43 0 0 0.55</pose><geometry><box><size>1.95 0.045 0.14</size></box></geometry><material><ambient>0.08 0.10 0.11 1</ambient><diffuse>0.10 0.12 0.13 1</diffuse></material></visual>
+
+        <visual name="input_support_1"><pose>0.15 0.33 0.17 0 0 0</pose><geometry><box><size>0.06 0.06 0.34</size></box></geometry><material><ambient>0.12 0.14 0.15 1</ambient><diffuse>0.14 0.16 0.17 1</diffuse></material></visual>
+        <visual name="input_support_2"><pose>0.15 -0.33 0.17 0 0 0</pose><geometry><box><size>0.06 0.06 0.34</size></box></geometry><material><ambient>0.12 0.14 0.15 1</ambient><diffuse>0.14 0.16 0.17 1</diffuse></material></visual>
+        <visual name="input_support_3"><pose>1.95 0.33 0.17 0 0 0</pose><geometry><box><size>0.06 0.06 0.34</size></box></geometry><material><ambient>0.12 0.14 0.15 1</ambient><diffuse>0.14 0.16 0.17 1</diffuse></material></visual>
+        <visual name="input_support_4"><pose>1.95 -0.33 0.17 0 0 0</pose><geometry><box><size>0.06 0.06 0.34</size></box></geometry><material><ambient>0.12 0.14 0.15 1</ambient><diffuse>0.14 0.16 0.17 1</diffuse></material></visual>
+        <visual name="output_support_1"><pose>6.42 0.33 0.17 0 0 0</pose><geometry><box><size>0.06 0.06 0.34</size></box></geometry><material><ambient>0.12 0.14 0.15 1</ambient><diffuse>0.14 0.16 0.17 1</diffuse></material></visual>
+        <visual name="output_support_2"><pose>6.42 -0.33 0.17 0 0 0</pose><geometry><box><size>0.06 0.06 0.34</size></box></geometry><material><ambient>0.12 0.14 0.15 1</ambient><diffuse>0.14 0.16 0.17 1</diffuse></material></visual>
+        <visual name="output_support_3"><pose>8.05 0.33 0.17 0 0 0</pose><geometry><box><size>0.06 0.06 0.34</size></box></geometry><material><ambient>0.12 0.14 0.15 1</ambient><diffuse>0.14 0.16 0.17 1</diffuse></material></visual>
+        <visual name="output_support_4"><pose>8.05 -0.33 0.17 0 0 0</pose><geometry><box><size>0.06 0.06 0.34</size></box></geometry><material><ambient>0.12 0.14 0.15 1</ambient><diffuse>0.14 0.16 0.17 1</diffuse></material></visual>
+
+        <!-- Product sensors and scanner gates along the conveyor. -->
+        <visual name="input_photoeye_left"><pose>0.58 0.38 0.57 0 0 0</pose><geometry><box><size>0.05 0.07 0.16</size></box></geometry><material><ambient>0.02 0.04 0.05 1</ambient><diffuse>0.02 0.04 0.05 1</diffuse></material></visual>
+        <visual name="input_photoeye_lens"><pose>0.58 0.34 0.58 1.5708 0 0</pose><geometry><cylinder><radius>0.032</radius><length>0.025</length></cylinder></geometry><material><ambient>0.0 0.35 0.50 1</ambient><diffuse>0.0 0.70 0.95 1</diffuse><emissive>0.0 0.10 0.16 1</emissive></material></visual>
+        <visual name="vision_photoeye_left"><pose>1.66 0.38 0.57 0 0 0</pose><geometry><box><size>0.05 0.07 0.16</size></box></geometry><material><ambient>0.02 0.04 0.05 1</ambient><diffuse>0.02 0.04 0.05 1</diffuse></material></visual>
+        <visual name="vision_photoeye_lens"><pose>1.66 0.34 0.58 1.5708 0 0</pose><geometry><cylinder><radius>0.032</radius><length>0.025</length></cylinder></geometry><material><ambient>0.0 0.35 0.50 1</ambient><diffuse>0.0 0.70 0.95 1</diffuse><emissive>0.0 0.10 0.16 1</emissive></material></visual>
+        <visual name="quality_photoeye_left"><pose>6.75 0.38 0.57 0 0 0</pose><geometry><box><size>0.05 0.07 0.16</size></box></geometry><material><ambient>0.02 0.04 0.05 1</ambient><diffuse>0.02 0.04 0.05 1</diffuse></material></visual>
+        <visual name="quality_photoeye_lens"><pose>6.75 0.34 0.58 1.5708 0 0</pose><geometry><cylinder><radius>0.032</radius><length>0.025</length></cylinder></geometry><material><ambient>0.0 0.35 0.50 1</ambient><diffuse>0.0 0.70 0.95 1</diffuse><emissive>0.0 0.10 0.16 1</emissive></material></visual>
+
+        <!-- Industrial control cabinets, cable trays, and conduit. -->
+        <visual name="overhead_cable_tray"><pose>4.55 2.43 2.15 0 0 0</pose><geometry><box><size>7.6 0.16 0.09</size></box></geometry><material><ambient>0.18 0.20 0.20 1</ambient><diffuse>0.22 0.24 0.24 1</diffuse></material></visual>
+        <visual name="plc_door_panel"><pose>3.0 1.895 0.62 0 0 0</pose><geometry><box><size>0.46 0.025 0.78</size></box></geometry><material><ambient>0.26 0.30 0.33 1</ambient><diffuse>0.32 0.36 0.40 1</diffuse></material></visual>
+        <visual name="plc_screen"><pose>2.91 1.878 0.82 0 0 0</pose><geometry><box><size>0.20 0.02 0.12</size></box></geometry><material><ambient>0.02 0.08 0.10 1</ambient><diffuse>0.02 0.35 0.42 1</diffuse><emissive>0.0 0.08 0.10 1</emissive></material></visual>
+        <visual name="plc_red_button"><pose>3.16 1.875 0.66 0 1.5708 0</pose><geometry><cylinder><radius>0.035</radius><length>0.02</length></cylinder></geometry><material><ambient>0.70 0.05 0.05 1</ambient><diffuse>0.95 0.08 0.08 1</diffuse></material></visual>
+        <visual name="plc_green_button"><pose>3.06 1.875 0.66 0 1.5708 0</pose><geometry><cylinder><radius>0.035</radius><length>0.02</length></cylinder></geometry><material><ambient>0.05 0.45 0.12 1</ambient><diffuse>0.08 0.75 0.18 1</diffuse></material></visual>
+        <visual name="plc_conduit"><pose>3.0 2.27 1.50 0 0 0</pose><geometry><box><size>0.08 0.46 0.08</size></box></geometry><material><ambient>0.13 0.14 0.14 1</ambient><diffuse>0.16 0.17 0.17 1</diffuse></material></visual>
+
+        <!-- Vision inspection station: gantry camera, light bar, and open inspection plate. -->
+        <visual name="vision_light_bar"><pose>2.0 -0.28 1.08 0 0 0</pose><geometry><box><size>0.58 0.045 0.055</size></box></geometry><material><ambient>0.95 0.92 0.72 1</ambient><diffuse>1.0 0.96 0.78 1</diffuse><emissive>0.25 0.23 0.16 1</emissive></material></visual>
+        <visual name="vision_lens"><pose>2.0 -0.27 1.14 1.5708 0 0</pose><geometry><cylinder><radius>0.075</radius><length>0.06</length></cylinder></geometry><material><ambient>0.01 0.015 0.02 1</ambient><diffuse>0.01 0.015 0.02 1</diffuse><specular>0.45 0.45 0.45 1</specular></material></visual>
+        <visual name="vision_hmi"><pose>1.52 -0.44 0.74 0 0 0.25</pose><geometry><box><size>0.22 0.035 0.16</size></box></geometry><material><ambient>0.02 0.07 0.09 1</ambient><diffuse>0.02 0.30 0.36 1</diffuse><emissive>0.0 0.06 0.08 1</emissive></material></visual>
+
+        <!-- Drill / assembly station: portal frame, spindle, motor, guards, and control panel. -->
+        <visual name="station_a_left_column"><pose>3.54 1.25 0.88 0 0 0</pose><geometry><box><size>0.10 0.10 0.92</size></box></geometry><material><ambient>0.10 0.11 0.12 1</ambient><diffuse>0.12 0.13 0.14 1</diffuse></material></visual>
+        <visual name="station_a_right_column"><pose>4.46 1.25 0.88 0 0 0</pose><geometry><box><size>0.10 0.10 0.92</size></box></geometry><material><ambient>0.10 0.11 0.12 1</ambient><diffuse>0.12 0.13 0.14 1</diffuse></material></visual>
+        <visual name="station_a_cross_slide"><pose>4.0 1.25 1.31 0 0 0</pose><geometry><box><size>0.98 0.14 0.12</size></box></geometry><material><ambient>0.22 0.22 0.20 1</ambient><diffuse>0.28 0.28 0.25 1</diffuse></material></visual>
+        <visual name="station_a_motor"><pose>4.0 1.25 1.15 0 0 0</pose><geometry><box><size>0.28 0.24 0.22</size></box></geometry><material><ambient>0.16 0.16 0.15 1</ambient><diffuse>0.22 0.22 0.20 1</diffuse></material></visual>
+        <visual name="station_a_chuck"><pose>4.0 1.25 0.82 0 0 0</pose><geometry><cylinder><radius>0.065</radius><length>0.18</length></cylinder></geometry><material><ambient>0.04 0.045 0.05 1</ambient><diffuse>0.05 0.055 0.06 1</diffuse><specular>0.28 0.28 0.28 1</specular></material></visual>
+        <visual name="station_a_clear_guard_l"><pose>3.47 0.88 0.62 0 0 0</pose><geometry><box><size>0.04 0.04 0.44</size></box></geometry><material><ambient>0.42 0.47 0.48 1</ambient><diffuse>0.48 0.53 0.54 0.55</diffuse></material></visual>
+        <visual name="station_a_clear_guard_r"><pose>4.53 0.88 0.62 0 0 0</pose><geometry><box><size>0.04 0.04 0.44</size></box></geometry><material><ambient>0.42 0.47 0.48 1</ambient><diffuse>0.48 0.53 0.54 0.55</diffuse></material></visual>
+        <visual name="station_a_panel"><pose>4.56 0.78 0.74 0 0 -0.25</pose><geometry><box><size>0.22 0.045 0.20</size></box></geometry><material><ambient>0.18 0.19 0.18 1</ambient><diffuse>0.24 0.25 0.23 1</diffuse></material></visual>
+
+        <!-- Drill / polish station: wheel guard, motor, extraction hood, and service panel. -->
+        <visual name="station_b_motor"><pose>3.76 -1.25 0.88 0 0 0</pose><geometry><box><size>0.34 0.28 0.28</size></box></geometry><material><ambient>0.16 0.16 0.15 1</ambient><diffuse>0.22 0.22 0.20 1</diffuse></material></visual>
+        <visual name="station_b_wheel_guard"><pose>4.04 -1.25 0.88 1.5708 0 0</pose><geometry><cylinder><radius>0.29</radius><length>0.055</length></cylinder></geometry><material><ambient>0.36 0.35 0.33 1</ambient><diffuse>0.45 0.43 0.40 1</diffuse></material></visual>
+        <visual name="station_b_work_wheel"><pose>4.08 -1.25 0.88 1.5708 0 0</pose><geometry><cylinder><radius>0.21</radius><length>0.08</length></cylinder></geometry><material><ambient>0.72 0.72 0.68 1</ambient><diffuse>0.82 0.82 0.78 1</diffuse><specular>0.25 0.25 0.25 1</specular></material></visual>
+        <visual name="station_b_extract_hood"><pose>4.27 -1.25 1.20 0 0 0</pose><geometry><box><size>0.34 0.40 0.14</size></box></geometry><material><ambient>0.12 0.13 0.13 1</ambient><diffuse>0.18 0.19 0.19 1</diffuse></material></visual>
+        <visual name="station_b_extract_pipe"><pose>4.48 -1.25 1.48 0 1.5708 0</pose><geometry><cylinder><radius>0.055</radius><length>0.50</length></cylinder></geometry><material><ambient>0.13 0.14 0.14 1</ambient><diffuse>0.18 0.19 0.19 1</diffuse></material></visual>
+        <visual name="station_b_panel"><pose>3.43 -0.78 0.72 0 0 0.25</pose><geometry><box><size>0.22 0.045 0.20</size></box></geometry><material><ambient>0.18 0.19 0.18 1</ambient><diffuse>0.24 0.25 0.23 1</diffuse></material></visual>
+
+        <!-- Quality station: scanner tunnel, sensor bars, and reject diverter detail. -->
+        <visual name="quality_tunnel_left_panel"><pose>5.82 0.37 0.66 0 0 0</pose><geometry><box><size>0.10 0.05 0.52</size></box></geometry><material><ambient>0.22 0.23 0.22 1</ambient><diffuse>0.28 0.29 0.27 1</diffuse></material></visual>
+        <visual name="quality_tunnel_right_panel"><pose>6.58 -0.37 0.66 0 0 0</pose><geometry><box><size>0.10 0.05 0.52</size></box></geometry><material><ambient>0.22 0.23 0.22 1</ambient><diffuse>0.28 0.29 0.27 1</diffuse></material></visual>
+        <visual name="quality_sensor_bar_top"><pose>6.20 0 1.12 0 0 0</pose><geometry><box><size>0.78 0.08 0.055</size></box></geometry><material><ambient>0.03 0.09 0.13 1</ambient><diffuse>0.05 0.38 0.48 1</diffuse><emissive>0.0 0.08 0.10 1</emissive></material></visual>
+        <visual name="quality_hmi"><pose>6.72 0.46 0.86 0 0 -0.45</pose><geometry><box><size>0.24 0.04 0.16</size></box></geometry><material><ambient>0.02 0.07 0.09 1</ambient><diffuse>0.02 0.30 0.36 1</diffuse><emissive>0.0 0.06 0.08 1</emissive></material></visual>
+        <visual name="reject_diverter_arm"><pose>7.95 -0.20 0.52 0 0 -0.45</pose><geometry><box><size>0.58 0.05 0.08</size></box></geometry><material><ambient>0.24 0.22 0.18 1</ambient><diffuse>0.36 0.32 0.24 1</diffuse></material></visual>
+
+        <!-- Safety equipment and floor detail. -->
+        <visual name="front_safety_fence_top"><pose>4.0 -2.04 0.88 0 0 0</pose><geometry><box><size>8.75 0.045 0.055</size></box></geometry><material><ambient>0.90 0.55 0.08 1</ambient><diffuse>0.95 0.62 0.10 1</diffuse></material></visual>
+        <visual name="front_safety_fence_mid"><pose>4.0 -2.04 0.58 0 0 0</pose><geometry><box><size>8.75 0.035 0.045</size></box></geometry><material><ambient>0.90 0.55 0.08 1</ambient><diffuse>0.95 0.62 0.10 1</diffuse></material></visual>
+        <visual name="fence_post_1"><pose>-0.2 -2.04 0.51 0 0 0</pose><geometry><box><size>0.06 0.06 0.85</size></box></geometry><material><ambient>0.08 0.08 0.075 1</ambient><diffuse>0.10 0.10 0.09 1</diffuse></material></visual>
+        <visual name="fence_post_2"><pose>1.7 -2.04 0.51 0 0 0</pose><geometry><box><size>0.06 0.06 0.85</size></box></geometry><material><ambient>0.08 0.08 0.075 1</ambient><diffuse>0.10 0.10 0.09 1</diffuse></material></visual>
+        <visual name="fence_post_3"><pose>3.6 -2.04 0.51 0 0 0</pose><geometry><box><size>0.06 0.06 0.85</size></box></geometry><material><ambient>0.08 0.08 0.075 1</ambient><diffuse>0.10 0.10 0.09 1</diffuse></material></visual>
+        <visual name="fence_post_4"><pose>5.5 -2.04 0.51 0 0 0</pose><geometry><box><size>0.06 0.06 0.85</size></box></geometry><material><ambient>0.08 0.08 0.075 1</ambient><diffuse>0.10 0.10 0.09 1</diffuse></material></visual>
+        <visual name="fence_post_5"><pose>7.4 -2.04 0.51 0 0 0</pose><geometry><box><size>0.06 0.06 0.85</size></box></geometry><material><ambient>0.08 0.08 0.075 1</ambient><diffuse>0.10 0.10 0.09 1</diffuse></material></visual>
+        <visual name="estop_pedestal"><pose>1.1 -1.82 0.43 0 0 0</pose><geometry><box><size>0.16 0.16 0.76</size></box></geometry><material><ambient>0.18 0.18 0.16 1</ambient><diffuse>0.22 0.22 0.20 1</diffuse></material></visual>
+        <visual name="estop_button"><pose>1.1 -1.72 0.88 1.5708 0 0</pose><geometry><cylinder><radius>0.08</radius><length>0.05</length></cylinder></geometry><material><ambient>0.75 0.02 0.02 1</ambient><diffuse>1.0 0.05 0.05 1</diffuse></material></visual>
+        <visual name="maintenance_cart"><pose>6.75 -2.25 0.22 0 0 0</pose><geometry><box><size>0.65 0.32 0.26</size></box></geometry><material><ambient>0.28 0.25 0.20 1</ambient><diffuse>0.42 0.37 0.28 1</diffuse></material></visual>
+        <visual name="maintenance_cart_handle"><pose>6.43 -2.25 0.46 0 0 0</pose><geometry><box><size>0.05 0.42 0.06</size></box></geometry><material><ambient>0.08 0.08 0.075 1</ambient><diffuse>0.10 0.10 0.09 1</diffuse></material></visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>

@@ -1,0 +1,9 @@
+reconfactory_ros:
+  ros__parameters:
+    backend_url: http://127.0.0.1:8000
+    publish_period_seconds: 0.5
+    topics:
+      factory_state: reconfactory/factory_state
+      faults: reconfactory/faults
+      station_command: reconfactory/station_command
+      factory_command: reconfactory/factory_command
