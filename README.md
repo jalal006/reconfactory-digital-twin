@@ -54,54 +54,175 @@ The Python supervisor is the source of truth for product state, scheduling,
 fault handling and persistence. Browser, Gazebo and ROS 2 integrations consume
 the same backend state.
 
-## Quick Start
+## Install And Run
 
-### PowerShell
+### What You Need
+
+- Python 3.11 or newer
+- Git
+- Windows PowerShell for the browser/backend demo
+- Ubuntu 24.04 or WSL Ubuntu for the full ROS 2 + Gazebo demo
+- ROS 2 Jazzy, Gazebo Sim and `colcon` only if you want the full simulation
+
+The project always runs the browser dashboard and FastAPI backend. The Ubuntu
+launcher also starts ROS 2 and Gazebo when those tools are installed.
+
+### Windows PowerShell
 
 ```powershell
-cd path\to\production_line
+git clone https://github.com/jalal006/reconfactory-digital-twin.git
+cd reconfactory-digital-twin
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\run_powershell.ps1
 ```
 
-Open `http://127.0.0.1:8000`.
+Open:
 
-### Ubuntu or WSL
+```text
+http://127.0.0.1:8000
+```
+
+This creates `.venv`, installs `requirements.txt`, and starts the web app.
+PowerShell mode is the easiest way to run the browser twin without ROS 2 or
+Gazebo.
+
+### Ubuntu Or WSL
+
+Install basic tools:
 
 ```bash
-cd /path/to/production_line
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip git curl
+```
+
+Clone and run:
+
+```bash
+git clone https://github.com/jalal006/reconfactory-digital-twin.git
+cd reconfactory-digital-twin
 bash run_ubuntu.sh
 ```
 
-This starts the web backend and, when installed, ROS 2, Gazebo and the Gazebo
-sync bridge from one terminal. Press `Ctrl+C` in that terminal to stop the
-stack.
+Open:
+
+```text
+http://127.0.0.1:8000
+```
+
+This creates `.venv-wsl`, installs `requirements.txt`, starts the backend, and
+then starts ROS 2 and Gazebo automatically if they are available. Press
+`Ctrl+C` in that same terminal to stop everything.
+
+### Full ROS 2 + Gazebo Setup
+
+Use Ubuntu 24.04 or WSL Ubuntu 24.04. Install ROS 2 Jazzy from the official ROS
+2 Ubuntu deb guide, then install the project simulation tools:
+
+```bash
+sudo apt update
+sudo apt install -y python3-colcon-common-extensions ros-jazzy-ros-gz
+```
+
+Make ROS 2 available in new terminals:
+
+```bash
+echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
+source ~/.bashrc
+```
+
+Check the tools:
+
+```bash
+ros2 --version
+gz sim --version
+python3 --version
+```
+
+Run the full stack from one terminal:
+
+```bash
+cd ~/reconfactory-digital-twin
+bash run_ubuntu.sh
+```
+
+Useful official install references:
+
+- ROS 2 Jazzy Ubuntu install: <https://docs.ros.org/en/jazzy/Installation/Ubuntu-Install-Debs.html>
+- Gazebo Ubuntu install: <https://gazebosim.org/docs/latest/install_ubuntu/>
+- Gazebo quick test: <https://gazebosim.org/docs/latest/getstarted/>
 
 ### Manual Python Setup
 
-```bash
-python -m venv .venv
-```
+Use this when you only want to run the backend manually.
 
 PowerShell:
 
 ```powershell
+python -m venv .venv
 .\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-python scripts\run_factory.py
+python scripts\run_factory.py --host 127.0.0.1 --port 8000
 ```
 
-Linux:
+Ubuntu or WSL:
 
 ```bash
-source .venv/bin/activate
+python3 -m venv .venv-wsl
+source .venv-wsl/bin/activate
+python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-python scripts/run_factory.py
+python scripts/run_factory.py --host 0.0.0.0 --port 8000
 ```
 
 ### Docker
 
 ```bash
 docker compose -f docker/docker-compose.yml up --build
+```
+
+### Verify The Install
+
+```bash
+python scripts/check_integrations.py
+python -m pytest
+python -m ruff check .
+python -m ruff format --check .
+```
+
+### Common Fixes
+
+If port `8000` is busy, stop the old process first.
+
+PowerShell:
+
+```powershell
+Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue |
+  Select-Object -ExpandProperty OwningProcess -Unique |
+  ForEach-Object { Stop-Process -Id $_ -Force }
+```
+
+Ubuntu or WSL:
+
+```bash
+fuser -k 8000/tcp
+```
+
+If PowerShell blocks the launcher script:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\run_powershell.ps1
+```
+
+If Gazebo or ROS 2 does not start, run:
+
+```bash
+python scripts/check_integrations.py
+tail -80 logs/backend.log
+tail -80 logs/ros2.log
+tail -80 logs/gazebo.log
+tail -80 logs/gazebo_sync.log
 ```
 
 ## Machine Vision
