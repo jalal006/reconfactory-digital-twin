@@ -83,6 +83,7 @@ class FactorySupervisor:
         self.faults: list[FaultRecord] = []
         self.recovery_actions: list[RecoveryAction] = []
         self.running = False
+        self.paused_by_fault = False
         self.tick_count = 0
         self.simulation_speed = 1.0
         self.rerouted_product_count = 0
@@ -109,12 +110,14 @@ class FactorySupervisor:
         for station in self.stations.values():
             station.start()
         self.running = True
+        self.paused_by_fault = False
         self.last_decision = "Production started."
         self._emit("factory_started", "Production started.", source="supervisor")
         return self.snapshot()
 
     def stop(self) -> dict[str, Any]:
         self.running = False
+        self.paused_by_fault = False
         self.last_decision = "Production paused by operator."
         self._emit("factory_stopped", "Production paused by operator.", source="supervisor")
         return self.snapshot()
@@ -277,17 +280,64 @@ class FactorySupervisor:
 
     def recover_machine(self, machine_id: str) -> dict[str, Any]:
         station = self._station(machine_id)
-        station.recover()
+        before_state = station.state
+        active_fault = self._active_faults_by_machine().get(machine_id)
         self._emit(
-            "machine_recovered",
-            f"{station.config.name} returned to idle service.",
+            "recovery_check_started",
+            f"Recovery check started for {station.config.name}.",
             source=machine_id,
-            data={"machine_id": machine_id},
+            data={
+                "machine_id": machine_id,
+                "previous_state": before_state.value,
+                "active_fault": active_fault,
+            },
         )
-        self.last_decision = f"{station.config.name} recovered and returned to scheduling."
-        if self.running and self._line_can_move():
-            self._resume_paused_products()
-            self._assign_work()
+        station.recover()
+        recovered = station.state == MachineState.IDLE and station.healthy
+        if self.logger:
+            self.logger.log_machine_snapshot(station.status())
+
+        if recovered:
+            if self.paused_by_fault and self._line_can_move():
+                self.running = True
+                self.paused_by_fault = False
+            resumed_products: list[str] = []
+            if self.running and self._line_can_move():
+                resumed_products = self._resume_paused_products()
+                self._assign_work()
+            self.last_decision = (
+                f"{station.config.name} recovery check passed; machine returned to scheduling."
+            )
+            self._emit(
+                "machine_recovered",
+                self.last_decision,
+                source=machine_id,
+                data={
+                    "machine_id": machine_id,
+                    "previous_state": before_state.value,
+                    "state": station.state.value,
+                    "healthy": station.healthy,
+                    "resumed_products": resumed_products,
+                    "line_running": self.running,
+                },
+            )
+        else:
+            self.last_decision = (
+                f"{station.config.name} recovery check failed; machine remains unavailable."
+            )
+            self._emit(
+                "recovery_check_failed",
+                self.last_decision,
+                severity=Severity.HIGH,
+                source=machine_id,
+                data={
+                    "machine_id": machine_id,
+                    "previous_state": before_state.value,
+                    "state": station.state.value,
+                    "healthy": station.healthy,
+                    "sensors": station.sensors.to_dict(),
+                },
+            )
         return self.snapshot()
 
     def snapshot(self) -> dict[str, Any]:
@@ -610,6 +660,7 @@ class FactorySupervisor:
         if station.config.machine_type == "processing":
             self._reassess_processing_queue(action)
         elif station.config.machine_type == "conveyor":
+            self.paused_by_fault = self.running
             self.running = False
             action.explanation = "Conveyor fault stopped line movement. Products remain in safe buffers until recovery."
         return action
@@ -636,18 +687,31 @@ class FactorySupervisor:
                 )
         self.processing_queue = retained
 
-    def _resume_paused_products(self) -> None:
+    def _resume_paused_products(self) -> list[str]:
+        resumed: list[str] = []
         for product in self.tracker.by_status(ProductStatus.PAUSED):
             process = product.next_process()
             if not process:
                 continue
             if process == "quality_check":
                 if self.scheduler.healthy_supported(process, "quality"):
-                    self.tracker.queue(product.product_id, "quality_buffer")
+                    queued = self.tracker.queue(product.product_id, "quality_buffer")
+                    self._persist_product(queued)
                     self.quality_queue.append(product.product_id)
+                    resumed.append(product.product_id)
             elif self.scheduler.healthy_supported(process, "processing"):
-                self.tracker.queue(product.product_id, "processing_buffer")
+                queued = self.tracker.queue(product.product_id, "processing_buffer")
+                self._persist_product(queued)
                 self.processing_queue.append(product.product_id)
+                resumed.append(product.product_id)
+        if resumed:
+            self._emit(
+                "products_resumed",
+                f"Recovered scheduling for {len(resumed)} paused product(s).",
+                source="reconfiguration_manager",
+                data={"product_ids": resumed},
+            )
+        return resumed
 
     def _pause_product(
         self,

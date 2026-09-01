@@ -1459,7 +1459,7 @@ function renderEvents(state) {
 function renderRecoveryButtons(state) {
   const faulted = state.machines.filter((machine) => machine.state === "fault" || machine.state === "emergency_stop");
   document.getElementById("recoverButtons").innerHTML = faulted
-    .map((machine) => `<button data-recover="${machine.machine_id}">Recover ${machine.name}</button>`)
+    .map((machine) => `<button type="button" data-recover="${machine.machine_id}">Run Recovery Check: ${machine.name}</button>`)
     .join("") || '<p class="muted">No faulted machines.</p>';
 }
 
@@ -1595,9 +1595,19 @@ document.querySelectorAll("[data-fault]").forEach((button) => {
   });
 });
 
-document.getElementById("recoverButtons").addEventListener("click", (event) => {
+document.getElementById("recoverButtons").addEventListener("click", async (event) => {
   const button = event.target.closest("[data-recover]");
-  if (button) apiPost("/api/recover", { machine_id: button.dataset.recover });
+  if (!button || button.disabled) return;
+  const label = button.textContent;
+  button.disabled = true;
+  button.textContent = "Checking and recovering...";
+  try {
+    await apiPost("/api/recover", { machine_id: button.dataset.recover });
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = label;
+    document.getElementById("lastDecision").textContent = `Recovery failed: ${error.message}`;
+  }
 });
 
 document.getElementById("refreshIntegrationsBtn").addEventListener("click", refreshIntegrations);
