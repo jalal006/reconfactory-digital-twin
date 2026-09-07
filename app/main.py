@@ -55,6 +55,24 @@ class GazeboVisualsRequest(BaseModel):
     updated_at: float | None = None
 
 
+class VisionResultRequest(BaseModel):
+    product_id: str
+    source: str = "gazebo_camera"
+    accepted: bool | None = None
+    passed: bool | None = None
+    detected_type: str | None = None
+    detected_color: str | None = None
+    detected_shape: str | None = None
+    area_ratio: float | None = None
+    missing_material: bool | None = None
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    defect_reason: str | None = None
+    inspection_method: str | None = None
+    inspection_latency_ms: float | None = None
+    frame_count: int | None = None
+    features: dict[str, Any] = Field(default_factory=dict)
+
+
 supervisor = FactorySupervisor(db_path=ROOT / "data" / "factory.db")
 _simulation_task: asyncio.Task[None] | None = None
 
@@ -100,12 +118,14 @@ async def status() -> dict[str, Any]:
 
 @app.get("/api/integrations")
 async def integrations() -> dict[str, Any]:
-    return check_integrations()
+    return await asyncio.to_thread(check_integrations)
 
 
 @app.get("/api/experiments/recovery")
 async def recovery_experiment(product_count: int = 12) -> dict[str, Any]:
-    return run_recovery_comparison(product_count=max(1, min(50, product_count)))
+    return await asyncio.to_thread(
+        run_recovery_comparison, product_count=max(1, min(50, product_count))
+    )
 
 
 @app.post("/api/start")
@@ -150,6 +170,16 @@ async def speed(payload: SpeedRequest) -> dict[str, Any]:
 @app.post("/api/gazebo/visuals")
 async def gazebo_visuals(payload: GazeboVisualsRequest) -> dict[str, Any]:
     return supervisor.update_gazebo_visuals(payload.model_dump())
+
+
+@app.post("/api/vision/result")
+async def vision_result(payload: VisionResultRequest) -> dict[str, Any]:
+    try:
+        return supervisor.accept_vision_result(payload.model_dump())
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/faults")

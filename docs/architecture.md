@@ -63,3 +63,22 @@ FastAPI backend
 ```
 
 This keeps the scheduler, fault detector, diagnosis engine, and recovery manager as the single source of truth.
+
+## Gazebo Camera Perception
+
+Gazebo camera mode adds a sensor feedback path without moving factory authority
+out of the supervisor:
+
+```text
+FactorySupervisor product state
+  -> Gazebo product pose
+  -> Gazebo RGB camera at vision station
+  -> ros_gz_bridge sensor_msgs/Image
+  -> /reconfactory_vision_inspector
+  -> OpenCV classification and 5-frame aggregation
+  -> /api/vision/result
+  -> FactorySupervisor quality/routing decision
+```
+
+The ROS 2 vision node performs perception only. It does not accept, reject,
+route, or persist products by itself.

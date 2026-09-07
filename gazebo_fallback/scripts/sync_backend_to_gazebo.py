@@ -177,6 +177,11 @@ PRODUCT_COLORS = {
     "blue_cylinder": (0.08, 0.26, 1.0, 1.0),
     "green_component": (0.08, 0.78, 0.24, 1.0),
 }
+PRODUCT_SHAPES = {
+    "red_block": "block",
+    "blue_cylinder": "cylinder",
+    "green_component": "component",
+}
 
 STATUS_COLORS = {
     "idle": (0.42, 0.42, 0.40, 1.0),
@@ -371,14 +376,98 @@ def post_json(url: str, payload: dict[str, Any], timeout: float = 0.4) -> None:
         response.read()
 
 
-def product_sdf(model_name: str, product_type: str) -> str:
-    color = rgba(PRODUCT_COLORS.get(product_type, (0.45, 0.5, 0.58, 1.0)))
+def defect_color(product_type: str) -> tuple[float, float, float, float]:
     if product_type == "blue_cylinder":
-        geometry = "<cylinder><radius>0.18</radius><length>0.24</length></cylinder>"
-    elif product_type == "green_component":
-        geometry = "<box><size>0.36 0.22 0.18</size></box>"
+        return PRODUCT_COLORS["red_block"]
+    return PRODUCT_COLORS["blue_cylinder"]
+
+
+def defect_shape(product_type: str) -> str:
+    return "block" if PRODUCT_SHAPES.get(product_type) == "cylinder" else "cylinder"
+
+
+def product_sdf(
+    model_name: str, product_type: str, defect_flags: list[str] | tuple[str, ...] | None = None
+) -> str:
+    defects = set(defect_flags or [])
+    color_source = (
+        defect_color(product_type)
+        if "wrong_colour" in defects
+        else PRODUCT_COLORS.get(product_type, (0.45, 0.5, 0.58, 1.0))
+    )
+    color = rgba(color_source)
+    shape = (
+        defect_shape(product_type)
+        if "wrong_shape" in defects
+        else PRODUCT_SHAPES.get(product_type, "block")
+    )
+    missing_part = "missing_part" in defects
+
+    if shape == "cylinder":
+        cargo_visual = f"""
+      <visual name="cargo">
+        <pose>0 0 0.09 0 0 0</pose>
+        <geometry><cylinder><radius>0.18</radius><length>0.24</length></cylinder></geometry>
+        <material>
+          <ambient>{color}</ambient>
+          <diffuse>{color}</diffuse>
+          <specular>0.18 0.18 0.18 1</specular>
+        </material>
+      </visual>"""
+    elif shape == "component":
+        lobe_visual = ""
+        if not missing_part:
+            lobe_visual = f"""
+      <visual name="cargo_lobe">
+        <pose>-0.13 0.10 0.09 0 0 0</pose>
+        <geometry><box><size>0.14 0.20 0.18</size></box></geometry>
+        <material>
+          <ambient>{color}</ambient>
+          <diffuse>{color}</diffuse>
+          <specular>0.18 0.18 0.18 1</specular>
+        </material>
+      </visual>"""
+        cargo_visual = f"""
+      <visual name="cargo_main">
+        <pose>-0.045 0 0.09 0 0 0</pose>
+        <geometry><box><size>0.31 0.16 0.18</size></box></geometry>
+        <material>
+          <ambient>{color}</ambient>
+          <diffuse>{color}</diffuse>
+          <specular>0.18 0.18 0.18 1</specular>
+        </material>
+      </visual>{lobe_visual}"""
+    elif missing_part:
+        cargo_visual = f"""
+      <visual name="cargo_main">
+        <pose>-0.06 -0.06 0.09 0 0 0</pose>
+        <geometry><box><size>0.28 0.40 0.28</size></box></geometry>
+        <material>
+          <ambient>{color}</ambient>
+          <diffuse>{color}</diffuse>
+          <specular>0.18 0.18 0.18 1</specular>
+        </material>
+      </visual>
+      <visual name="cargo_lobe">
+        <pose>0.10 0.10 0.09 0 0 0</pose>
+        <geometry><box><size>0.12 0.16 0.28</size></box></geometry>
+        <material>
+          <ambient>{color}</ambient>
+          <diffuse>{color}</diffuse>
+          <specular>0.18 0.18 0.18 1</specular>
+        </material>
+      </visual>"""
     else:
-        geometry = "<box><size>0.40 0.40 0.36</size></box>"
+        cargo_visual = f"""
+      <visual name="cargo">
+        <pose>0 0 0.09 0 0 0</pose>
+        <geometry><box><size>0.40 0.40 0.36</size></box></geometry>
+        <material>
+          <ambient>{color}</ambient>
+          <diffuse>{color}</diffuse>
+          <specular>0.18 0.18 0.18 1</specular>
+        </material>
+      </visual>"""
 
     return f"""
 <sdf version="1.10">
@@ -462,15 +551,7 @@ def product_sdf(model_name: str, product_type: str) -> str:
         <geometry><cylinder><radius>0.018</radius><length>0.012</length></cylinder></geometry>
         <material><ambient>0.95 0.62 0.05 1</ambient><diffuse>1.00 0.72 0.08 1</diffuse><emissive>0.12 0.07 0.0 1</emissive></material>
       </visual>
-      <visual name="cargo">
-        <pose>0 0 0.09 0 0 0</pose>
-        <geometry>{geometry}</geometry>
-        <material>
-          <ambient>{color}</ambient>
-          <diffuse>{color}</diffuse>
-          <specular>0.18 0.18 0.18 1</specular>
-        </material>
-      </visual>
+{cargo_visual}
     </link>
   </model>
 </sdf>
@@ -914,7 +995,11 @@ class GazeboSync:
                 start_pose = self.product_start_pose(product)
                 self.create_model(
                     model_name,
-                    product_sdf(model_name, product.get("product_type", "")),
+                    product_sdf(
+                        model_name,
+                        product.get("product_type", ""),
+                        product.get("defect_flags", []),
+                    ),
                     start_pose,
                 )
                 self.spawned_products.add(model_name)
@@ -1009,7 +1094,6 @@ class GazeboSync:
             dwell_until = self.product_dwell_until.get(model_name)
             if dwell_until is not None and (not running or now < dwell_until):
                 self.product_last_motion[model_name] = now
-                self.set_pose(model_name, current)
                 continue
             if dwell_until is not None and now >= dwell_until:
                 location = self.product_dwell_location.pop(model_name, "")
@@ -1020,7 +1104,6 @@ class GazeboSync:
             settle_until = self.product_arrival_settle_until.get(model_name)
             if settle_until is not None and (not running or now < settle_until):
                 self.product_last_motion[model_name] = now
-                self.set_pose(model_name, current)
                 continue
             if settle_until is not None and now >= settle_until:
                 location = self.product_arrival_settle_location.pop(model_name, "")
@@ -1034,7 +1117,6 @@ class GazeboSync:
                 ) + self.product_path_duration.get(model_name, 0.0)
                 if now < transport_until:
                     self.product_last_motion[model_name] = now
-                    self.set_pose(model_name, current)
                     continue
                 next_pose = path[-1]
                 self.product_waypoint_index[model_name] = max(0, len(path) - 1)
@@ -1053,6 +1135,9 @@ class GazeboSync:
                     ):
                         self.product_dwelled_destination[model_name] = reached
                         self.done_until[reached] = now + DONE_INDICATION_SECONDS
+                if reached in {"accepted_output", "reject_output"}:
+                    self.product_pending_destinations.pop(model_name, None)
+                    continue
                 if not running:
                     continue
                 speed = max(
@@ -1287,8 +1372,8 @@ class GazeboSync:
         state = fetch_json(f"{self.backend_url}/api/status")
         self.sync_product_targets(state)
         self.advance_products()
-        self.sync_transport_arrows()
         self.publish_visuals()
+        self.sync_transport_arrows()
 
     def loop(self, *, once: bool) -> None:
         self.wait_for_services()
@@ -1304,8 +1389,8 @@ class GazeboSync:
                     self.sync_product_targets(fetch_json(f"{self.backend_url}/api/status"))
                     next_poll = now + self.poll_interval
                 self.advance_products()
-                self.sync_transport_arrows()
                 self.publish_visuals()
+                self.sync_transport_arrows()
             except (urllib.error.URLError, TimeoutError) as exc:
                 print(f"Backend not reachable at {self.backend_url}: {exc}")
             except RuntimeError as exc:

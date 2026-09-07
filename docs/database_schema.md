@@ -7,6 +7,9 @@ SQLite logging is implemented in `reconfactory.logger.DataLogger`.
 ### `events`
 
 Stores operator actions, scheduling decisions, product events, fault detections, and recovery decisions.
+Vision events include inspection metadata in `data_json`, such as source,
+detected color, detected shape, area ratio, confidence, frame count, and camera
+inspection latency.
 
 ### `products`
 

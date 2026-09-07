@@ -186,6 +186,7 @@ let latestState = null;
 let fallbackPoll = null;
 let animationFrame = null;
 let activeVisualView = "main";
+let runCommandPending = false;
 const visualProducts = new Map();
 const seenEventIds = new Set();
 const detectorDoneUntil = new Map();
@@ -996,6 +997,15 @@ function nextTriggeredDestination(product, triggerLocation) {
   return target && factoryLayout[target] && !hiddenTransitStops.has(target) ? target : triggerLocation;
 }
 
+function forwardVisualDestination(product, current, requestedLocation) {
+  if (requestedLocation === "recovery_buffer") return requestedLocation;
+  const route = normalizedProductRoute(product);
+  const checkpoint = current.destination || current.location;
+  const checkpointIndex = route.lastIndexOf(checkpoint);
+  const requestedIndex = route.lastIndexOf(requestedLocation);
+  return requestedIndex >= 0 && checkpointIndex > requestedIndex ? checkpoint : requestedLocation;
+}
+
 function mergeVisualPending(visual, destinations) {
   if (!visual.pendingDestinations) visual.pendingDestinations = [];
   destinations.forEach((destination) => {
@@ -1064,7 +1074,9 @@ function visualRouteSet(state) {
 function updateProductTargets(state) {
   const now = performance.now();
   const hasFreshGazeboVisuals = freshGazeboVisuals(state);
-  if (!hasFreshGazeboVisuals) syncRouteIndicatorsFromProductHistory(state, now);
+  if (!hasFreshGazeboVisuals && state.gazebo_visuals?.source !== "gazebo") {
+    syncRouteIndicatorsFromProductHistory(state, now);
+  }
   const gazeboLocations = hasFreshGazeboVisuals ? state.gazebo_visuals.product_locations || {} : {};
   const seen = new Set();
   state.products.forEach((product, index) => {
@@ -1074,17 +1086,26 @@ function updateProductTargets(state) {
     const rawGazeboLocation = gazeboLocations[product.product_id];
     const gazeboLocation = factoryLayout[rawGazeboLocation] ? rawGazeboLocation : null;
     const productDone = product.status === "completed" || product.status === "rejected";
+    const gazeboDriven = hasFreshGazeboVisuals || current?.gazeboDriven || state.gazebo_visuals?.source === "gazebo";
     let requestedLocation = nextLocation;
-    if (hasFreshGazeboVisuals) {
-      if (gazeboLocation) {
+    if (gazeboDriven) {
+      if (hasFreshGazeboVisuals && gazeboLocation) {
         requestedLocation = nextTriggeredDestination(product, gazeboLocation);
       } else if (current) {
-        requestedLocation = isVisualTransporting(current, now)
-          ? current.destination
-          : current.location;
+        requestedLocation = current.route ? current.destination : current.location;
+        current.pendingDestination = null;
       } else {
         requestedLocation = "input_queue";
       }
+    }
+    if (current) requestedLocation = forwardVisualDestination(product, current, requestedLocation);
+    // A delayed Gazebo station update must not replay a finished output transfer.
+    if (productDone && current &&
+        (nextLocation === "accepted_output" || nextLocation === "reject_output") &&
+        (current.destination === nextLocation || current.location === nextLocation)) {
+      requestedLocation = nextLocation;
+      current.pendingDestination = null;
+      current.pendingDestinations = [];
     }
     if (!current) {
       const startLocation = gazeboLocation || requestedLocation || "input_queue";
@@ -1096,6 +1117,7 @@ function updateProductTargets(state) {
         targetY: start.y,
         angle: 0,
         useGazeboPose: false,
+        gazeboDriven,
         location: startLocation,
         destination: startLocation,
         pendingDestination: null,
@@ -1140,7 +1162,7 @@ function updateProductTargets(state) {
         current.pendingDestination = requestedLocation;
       }
 
-      const destination = current.pendingDestination || requestedLocation;
+      const destination = forwardVisualDestination(product, current, current.pendingDestination || requestedLocation);
       if (!isVisualTransporting(current, now) && current.location !== destination) {
         startVisualMovement(current, product, index, destination, state, now);
       } else if (!isVisualTransporting(current, now)) {
@@ -1151,6 +1173,7 @@ function updateProductTargets(state) {
         current.y = target.y;
       }
       current.useGazeboPose = false;
+      current.gazeboDriven = gazeboDriven;
       current.product = product;
       current.index = index;
     }
@@ -1519,7 +1542,8 @@ function render(state) {
   runState.classList.toggle("running", state.running);
   const runToggle = document.getElementById("runToggleBtn");
   const hasStarted = state.tick > 0 || state.products.length > 0;
-  runToggle.textContent = state.running ? "Pause" : hasStarted ? "Resume" : "Start";
+  runToggle.disabled = runCommandPending;
+  if (!runCommandPending) runToggle.textContent = state.running ? "Pause" : hasStarted ? "Resume" : "Start";
   runToggle.classList.toggle("secondary", !state.running && hasStarted);
   renderRoutes(state);
   renderStations(state);
@@ -1570,8 +1594,24 @@ function connectWebSocket() {
   };
 }
 
-document.getElementById("runToggleBtn").addEventListener("click", () => {
-  apiPost(latestState?.running ? "/api/stop" : "/api/start");
+document.getElementById("runToggleBtn").addEventListener("click", async () => {
+  if (runCommandPending) return;
+  const button = document.getElementById("runToggleBtn");
+  const wasRunning = Boolean(latestState?.running);
+  runCommandPending = true;
+  button.disabled = true;
+  button.textContent = wasRunning ? "Pausing..." : "Starting...";
+  try {
+    await apiPost(wasRunning ? "/api/stop" : "/api/start");
+  } catch (error) {
+    document.getElementById("lastDecision").textContent = `Command failed: ${error.message}`;
+  } finally {
+    runCommandPending = false;
+    button.disabled = false;
+    const running = latestState?.running ?? wasRunning;
+    const hasStarted = latestState?.tick > 0 || latestState?.products?.length > 0;
+    button.textContent = running ? "Pause" : hasStarted ? "Resume" : "Start";
+  }
 });
 document.getElementById("resetBtn").addEventListener("click", () => apiPost("/api/reset"));
 document.querySelectorAll("[data-visual-view]").forEach((button) => {

@@ -6,9 +6,27 @@
 [![Tests](https://github.com/jalal006/reconfactory-digital-twin/actions/workflows/tests.yml/badge.svg)](https://github.com/jalal006/reconfactory-digital-twin/actions/workflows/tests.yml)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-A fault-aware smart factory simulation with an animated browser twin, OpenCV
-inspection, automatic rerouting, SQLite analytics, ROS 2 integration, and a
-synchronized Gazebo factory.
+A fault-aware smart factory digital twin with Gazebo RGB camera perception,
+ROS 2 and OpenCV color inspection, an animated browser dashboard, automatic
+rerouting and recovery, and SQLite production analytics.
+
+## Camera And Control Features
+
+- Gazebo-rendered RGB images feed a ROS 2 OpenCV inspector; five valid frames
+  produce one product inspection result used by the existing factory supervisor.
+- Raw and annotated camera topics expose detected color, contour and PASS/FAIL.
+  Camera acceptance checks color only; final simulated Quality Control rejects
+  injected wrong-shape, missing-part and quality defects.
+- Browser-only synthetic vision remains available without ROS or Gazebo, with
+  an explicit fallback label when a camera inspection times out.
+- Browser movement waits through delayed Gazebo updates without reversing steps;
+  Accepted and Rejected outputs remain terminal in both views.
+- Slow integration checks run outside the API event loop. Start/Pause provides
+  immediate pending feedback, and stationary Gazebo products avoid repeated pose
+  commands.
+- A runtime checker verifies delivered camera images and detects duplicate ROS
+  nodes. Regression coverage includes 132 Python tests and eight JavaScript
+  movement scenarios.
 
 ## What It Demonstrates
 
@@ -16,13 +34,13 @@ synchronized Gazebo factory.
 |---|---|
 | Factory automation | Product recipes, queues, machine states, scheduling and quality control |
 | Processing | Two capability-based processing stations |
-| Machine vision | OpenCV color, shape and missing-section inspection |
+| Machine vision | Gazebo camera color inspection; synthetic color, shape and missing-section inspection |
 | Resilience | Fault detection, diagnosis, recovery and automatic rerouting |
 | Visualization | Animated browser dashboard and synchronized Gazebo scene |
 | Data | SQLite events, products, machine snapshots, sensors and faults |
 | Analytics | Throughput, cycle time, utilization, downtime and recovery metrics |
 | Integration | ROS 2 state/fault/command topics and optional OPC UA |
-| Quality | 74 automated tests plus Ruff lint and formatting checks |
+| Quality | Automated regression tests plus Ruff lint and formatting checks |
 
 ## Factory Flow
 
@@ -47,6 +65,10 @@ flowchart LR
     SUP --> DB[(SQLite)]
     API <--> ROS[ROS 2 Bridge]
     API <--> GZ[Gazebo Sync]
+    GZ --> CAM[Gazebo RGB Camera]
+    CAM --> ROSIMG[ROS Image Bridge]
+    ROSIMG --> VISNODE[ROS 2 Vision Inspector]
+    VISNODE --> API
     API --> OPC[Optional OPC UA]
 ```
 
@@ -120,7 +142,7 @@ Use Ubuntu 24.04 or WSL Ubuntu 24.04. Install ROS 2 Jazzy from the official ROS
 
 ```bash
 sudo apt update
-sudo apt install -y python3-colcon-common-extensions ros-jazzy-ros-gz
+sudo apt install -y python3-colcon-common-extensions ros-jazzy-ros-gz ros-jazzy-cv-bridge
 ```
 
 Make ROS 2 available in new terminals:
@@ -133,7 +155,7 @@ source ~/.bashrc
 Check the tools:
 
 ```bash
-ros2 --version
+ros2 --help
 gz sim --version
 python3 --version
 ```
@@ -227,7 +249,15 @@ tail -80 logs/gazebo_sync.log
 
 ## Machine Vision
 
-The live vision station runs this pipeline:
+The vision system supports two modes:
+
+- `VISION_SOURCE=synthetic`: default browser-safe mode. OpenCV inspects a
+  generated simulation frame, so Windows and Docker do not need ROS 2 or Gazebo.
+- `VISION_SOURCE=gazebo`: full Ubuntu/WSL mode. Gazebo renders an RGB camera
+  image at the vision station, ROS 2 transports it, and the ROS vision node
+  sends one aggregated inspection result back to the supervisor.
+
+Synthetic mode pipeline:
 
 1. Generate a simulated inspection frame for the current product.
 2. Convert the frame to HSV.
@@ -238,25 +268,74 @@ The live vision station runs this pipeline:
 7. Compare contour area to detect missing material.
 8. Accept the product or route it to rejection.
 
+Gazebo camera mode pipeline:
+
+Camera acceptance checks color only. Shape and area are diagnostic measurements;
+they do not reject a Gazebo-camera product. Synthetic mode retains shape and
+missing-material checks, including when a camera timeout triggers fallback.
+
+Final Quality Control checks injected wrong-shape, missing-part and quality
+defects independently of camera color inspection. These defects are rejected at
+Quality with a reason in the log; they are not accepted as finished products.
+
+```text
+Gazebo RGB Camera
+-> ros_gz_bridge sensor_msgs/Image
+-> /reconfactory_vision_inspector
+-> OpenCV frame aggregation
+-> /reconfactory/vision/result JSON
+-> /api/vision/result
+-> FactorySupervisor quality/routing logic
+```
+
 Implementation:
 
 - `vision/inspector.py`
 - `vision/opencv_inspector.py`
 - `reconfactory/supervisor.py`
+- `ros2_ws/src/reconfactory_ros/reconfactory_ros/vision_inspector_node.py`
 - `tests/test_opencv_vision.py`
+- `tests/test_gazebo_camera_vision.py`
 
 Inspection events expose the method, detected color, shape, area ratio and
-confidence. OpenCV currently analyzes generated simulation frames, not pixels
-from a physical or Gazebo camera.
+confidence. In Gazebo mode the final decision is gated by the current product
+waiting at the vision station; the node aggregates five valid frames and
+publishes one authoritative result. If the camera result does not arrive before
+the timeout, the supervisor falls back to synthetic OpenCV inspection and records
+`opencv_after_camera_timeout` (or the rule-based equivalent), not `gazebo_camera`.
+
+Run the camera demo from the repository root:
+
+```bash
+VISION_SOURCE=gazebo bash run_ubuntu.sh
+```
+
+In a second Ubuntu terminal, from the repository root:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source ros2_ws/install/setup.bash
+python3 scripts/check_vision_pipeline.py
+ros2 topic echo /reconfactory/vision/result
+```
+
+Start the result listener before spawning. Spawn a normal red block, then a red
+block with `wrong_colour`: expect camera acceptance followed by color rejection.
+For live images, install the optional viewer (`sudo apt install
+ros-jazzy-rqt-image-view`) and run `ros2 run rqt_image_view rqt_image_view
+/reconfactory/vision/debug_image` in another terminal. The annotated stream is
+published during active inspection; the raw stream runs continuously.
 
 ## ROS 2
 
-The Ubuntu launcher builds and starts four ROS 2 nodes:
+The Ubuntu launcher builds and starts four factory nodes plus the vision node
+when camera dependencies are available:
 
 - `/reconfactory_supervisor`
 - `/reconfactory_station_controller`
 - `/reconfactory_fault_detector`
 - `/reconfactory_logger`
+- `/reconfactory_vision_inspector`
 
 Main topics:
 
@@ -264,6 +343,9 @@ Main topics:
 - `/reconfactory/faults`
 - `/reconfactory/factory_command`
 - `/reconfactory/station_command`
+- `/reconfactory/vision/image_raw`
+- `/reconfactory/vision/result`
+- `/reconfactory/vision/debug_image`
 
 See [ROS 2 integration](docs/ROS2_INTEGRATION.md) for command examples.
 
@@ -275,14 +357,21 @@ python -m ruff check .
 python -m ruff format --check .
 ```
 
-Current result: **74 passed**.
+See [camera requirements audit](docs/VISION_ACCEPTANCE_AUDIT.md) for verification
+results, known limitations, and the remaining live demo checks.
 
 GitHub Actions runs the same checks on every push and pull request.
+
+In a sourced ROS terminal, system pytest plugins may conflict with the project
+virtual environment. For a plugin-loading error such as missing `lark`, use
+`env -u PYTHONPATH .venv-wsl/bin/python -m pytest` to run the same Python suite
+without inherited ROS packages.
 
 ## Useful Commands
 
 ```bash
 python scripts/check_integrations.py
+python scripts/check_vision_pipeline.py
 python scripts/generate_sensor_data.py
 python scripts/run_experiment.py
 python scripts/export_report.py
@@ -322,8 +411,8 @@ docs/              Technical documentation
 - This is a software-first educational digital twin, not an industrial safety
   controller.
 - Gazebo and ROS 2 require their external Ubuntu/WSL runtimes.
-- Machine vision uses generated inspection frames rather than a live camera
-  stream.
+- Synthetic vision mode uses generated inspection frames. Gazebo vision mode
+  uses rendered simulator pixels, not a physical camera.
 - OPC UA is optional and runs as a separate process.
 
 ## License

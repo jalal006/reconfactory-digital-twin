@@ -36,6 +36,8 @@ def check_integrations() -> dict[str, object]:
         _fastapi_status(),
         _ros2_status(),
         _gazebo_status(),
+        _ros_gz_bridge_status(),
+        _cv_bridge_status(),
         _colcon_status(),
         _opcua_status(),
     ]
@@ -126,6 +128,42 @@ def _gazebo_status() -> IntegrationStatus:
             "Gazebo Sim CLI is available through ROS/Gazebo tools."
             if command
             else "Gazebo command not found on PATH."
+        ),
+    )
+
+
+def _ros_gz_bridge_status() -> IntegrationStatus:
+    available = bool(
+        _bash_output(
+            "source /opt/ros/jazzy/setup.bash 2>/dev/null || true; "
+            "ros2 pkg prefix ros_gz_bridge >/dev/null 2>&1 && echo installed"
+        )
+    )
+    return IntegrationStatus(
+        name="ros_gz_bridge",
+        installed=available,
+        detail=(
+            "ROS-Gazebo image bridge is available."
+            if available
+            else "Required for Gazebo camera mode. Install ros-jazzy-ros-gz."
+        ),
+    )
+
+
+def _cv_bridge_status() -> IntegrationStatus:
+    available = bool(
+        _bash_output(
+            "source /opt/ros/jazzy/setup.bash 2>/dev/null || true; "
+            "python3 -c 'import cv_bridge; print(\"installed\")' 2>/dev/null"
+        )
+    )
+    return IntegrationStatus(
+        name="cv_bridge",
+        installed=available,
+        detail=(
+            "ROS Image to OpenCV conversion is available."
+            if available
+            else "Required for Gazebo camera mode. Install ros-jazzy-cv-bridge."
         ),
     )
 

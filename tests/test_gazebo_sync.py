@@ -5,6 +5,8 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 SYNC_PATH = ROOT / "gazebo_fallback" / "scripts" / "sync_backend_to_gazebo.py"
 
@@ -18,6 +20,75 @@ def load_sync_module():
     return module
 
 
+@pytest.mark.parametrize("output", ["accepted_output", "reject_output"])
+def test_output_discards_stale_quality_movement_queue(output):
+    sync = load_sync_module()
+    bridge = sync.GazeboSync(
+        backend_url="http://127.0.0.1:8000",
+        world="reconfactory_world",
+        interval=0.04,
+        dry_run=True,
+    )
+    product = {
+        "product_id": "P-00001",
+        "product_type": "red_block",
+        "status": "completed" if output == "accepted_output" else "rejected",
+        "current_location": output,
+    }
+    bridge.sync_product_targets({"tick": 10, "running": True, "products": [product]})
+    model_name = "rf_product_P_00001"
+    bridge.product_poses[model_name] = bridge.product_paths[model_name][-1]
+    bridge.product_waypoint_index[model_name] = len(bridge.product_paths[model_name]) - 1
+    bridge.product_pending_destinations[model_name] = ["quality", output]
+    bridge.advance_products()
+    bridge.advance_products()
+    assert bridge.product_locations[model_name] == output
+    assert bridge.product_destinations[model_name] == output
+    assert model_name not in bridge.product_pending_destinations
+
+
+@pytest.mark.parametrize("phase", ["transport", "settle", "processing"])
+def test_stationary_products_do_not_send_repeated_pose_commands(monkeypatch, phase):
+    sync = load_sync_module()
+    bridge = sync.GazeboSync(
+        backend_url="http://127.0.0.1:8000",
+        world="reconfactory_world",
+        interval=0.04,
+        dry_run=True,
+    )
+    clock = [100.0]
+    monkeypatch.setattr(sync.time, "monotonic", lambda: clock[0])
+    products = [
+        {
+            "product_id": f"P-{i:05d}",
+            "product_type": "red_block",
+            "status": "processing",
+            "current_location": "vision",
+            "assigned_station": "vision",
+        }
+        for i in range(20)
+    ]
+    bridge.sync_product_targets({"tick": 1, "running": True, "products": products})
+    if phase != "transport":
+        timers = (
+            bridge.product_dwell_until
+            if phase == "processing"
+            else bridge.product_arrival_settle_until
+        )
+        for model_name in bridge.spawned_products:
+            timers[model_name] = 105.0
+    commands = []
+    monkeypatch.setattr(bridge, "set_pose", lambda name, pose: commands.append(name))
+    for _ in range(10):
+        bridge.advance_products()
+    assert commands == []
+    if phase == "transport":
+        clock[0] = 110.0
+        bridge.advance_products()
+        assert len(commands) == 20
+        assert all(location == "vision" for location in bridge.product_locations.values())
+
+
 def test_product_sdf_contains_expected_model_and_material() -> None:
     sync = load_sync_module()
 
@@ -29,6 +100,34 @@ def test_product_sdf_contains_expected_model_and_material() -> None:
     assert "<kinematic>true</kinematic>" in sdf
     assert "<box><size>0.40 0.40 0.36</size></box>" in sdf
     assert "1.000 0.080 0.080 1.000" in sdf
+
+
+def test_green_component_sdf_uses_component_cargo_shape() -> None:
+    sync = load_sync_module()
+
+    sdf = sync.product_sdf("rf_product_P_00002", "green_component")
+
+    assert 'visual name="cargo_main"' in sdf
+    assert 'visual name="cargo_lobe"' in sdf
+    assert "<box><size>0.31 0.16 0.18</size></box>" in sdf
+    assert "<box><size>0.14 0.20 0.18</size></box>" in sdf
+
+
+def test_product_sdf_renders_wrong_colour_defect() -> None:
+    sync = load_sync_module()
+
+    sdf = sync.product_sdf("rf_product_P_00003", "red_block", ["wrong_colour"])
+
+    assert "0.080 0.260 1.000 1.000" in sdf
+
+
+def test_product_sdf_renders_missing_component_defect() -> None:
+    sync = load_sync_module()
+
+    sdf = sync.product_sdf("rf_product_P_00004", "green_component", ["missing_part"])
+
+    assert 'visual name="cargo_main"' in sdf
+    assert 'visual name="cargo_lobe"' not in sdf
 
 
 def test_product_target_moves_paused_product_to_recovery_buffer() -> None:
@@ -574,3 +673,41 @@ def test_status_light_sdf_uses_fault_emissive_color() -> None:
 
     assert '<model name="rf_status_station_a">' in sdf
     assert "1.000 0.060 0.060 1.000" in sdf
+
+
+def test_gazebo_world_contains_rgb_vision_camera() -> None:
+    world = (ROOT / "gazebo_fallback" / "worlds" / "reconfactory.world.sdf").read_text(
+        encoding="utf-8"
+    )
+
+    assert "gz-sim-sensors-system" in world
+    assert "gz-sim-physics-system" in world
+    assert "gz-sim-user-commands-system" in world
+    assert "gz-sim-scene-broadcaster-system" in world
+    assert '<sensor name="rgb_inspection_camera" type="camera">' in world
+    assert "<topic>/reconfactory/vision/image_raw</topic>" in world
+    assert "<width>640</width>" in world
+    assert "<height>480</height>" in world
+    assert "<update_rate>15</update_rate>" in world
+
+
+def test_gazebo_bridge_maps_camera_topics_to_ros() -> None:
+    bridge = (ROOT / "gazebo_fallback" / "config" / "ros_gz_bridge.yaml").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'ros_topic_name: "/reconfactory/vision/image_raw"' in bridge
+    assert 'ros_type_name: "sensor_msgs/msg/Image"' in bridge
+    assert 'gz_type_name: "gz.msgs.Image"' in bridge
+    assert "direction: GZ_TO_ROS" in bridge
+    assert 'ros_topic_name: "/reconfactory/vision/camera_info"' in bridge
+
+
+def test_gazebo_launch_starts_image_bridge() -> None:
+    launch = (ROOT / "gazebo_fallback" / "launch" / "gazebo_reconfactory.launch.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "ros_gz_bridge" in launch
+    assert "parameter_bridge" in launch
+    assert "ros_gz_bridge.yaml" in launch

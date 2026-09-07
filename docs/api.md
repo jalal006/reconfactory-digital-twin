@@ -102,6 +102,30 @@ Content-Type: application/json
 }
 ```
 
+## Vision Result
+
+```http
+POST /api/vision/result
+Content-Type: application/json
+
+{
+  "product_id": "P-00001",
+  "source": "gazebo_camera",
+  "accepted": true,
+  "detected_color": "red",
+  "detected_shape": "block",
+  "area_ratio": 0.94,
+  "missing_material": false,
+  "confidence": 0.93,
+  "frame_count": 5,
+  "inspection_latency_ms": 180.0
+}
+```
+
+Used by the ROS 2 Gazebo camera inspector. The supervisor accepts the result
+only when `product_id` matches the product currently waiting at the vision
+station.
+
 ## WebSocket
 
 ```text

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 from collections import deque
 from collections.abc import Iterable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +59,8 @@ class FactorySupervisor:
         enable_database: bool = True,
         db_path: str | Path = "data/factory.db",
         reset_database: bool = False,
+        vision_source: str | None = None,
+        vision_timeout_ticks: int = 5,
     ) -> None:
         self.config_dir = Path(config_dir)
         self.recipes = load_product_recipes(self.config_dir)
@@ -87,6 +91,15 @@ class FactorySupervisor:
         self.tick_count = 0
         self.simulation_speed = 1.0
         self.rerouted_product_count = 0
+        self.vision_source = (
+            vision_source or os.getenv("VISION_SOURCE") or "synthetic"
+        ).lower()
+        if self.vision_source not in {"synthetic", "gazebo"}:
+            self.vision_source = "synthetic"
+        self.vision_timeout_ticks = max(1, int(vision_timeout_ticks))
+        self.pending_vision_product_id: str | None = None
+        self.pending_vision_started_tick: int | None = None
+        self.last_inspection_result: dict[str, Any] | None = None
         self.product_tick_history: dict[str, dict[str, int | None]] = {}
         self.gazebo_visuals: dict[str, Any] = {
             "source": "browser",
@@ -130,6 +143,8 @@ class FactorySupervisor:
             enable_database=enable_database,
             db_path=db_path,
             reset_database=clear_database,
+            vision_source=self.vision_source,
+            vision_timeout_ticks=self.vision_timeout_ticks,
         )
         return self.snapshot()
 
@@ -172,6 +187,7 @@ class FactorySupervisor:
             self._detect_faults()
             self._tick_stations()
             self._detect_faults()
+            self._expire_pending_vision_inspection()
             if self._line_can_move():
                 self._assign_work()
             self._persist_machine_snapshots()
@@ -278,6 +294,29 @@ class FactorySupervisor:
         }
         return {"accepted": len(sanitized)}
 
+    def accept_vision_result(self, payload: dict[str, Any]) -> dict[str, Any]:
+        product_id = str(payload.get("product_id") or "")
+        if not product_id:
+            raise ValueError("Vision result must include product_id.")
+        if self.pending_vision_product_id != product_id:
+            self._emit(
+                "vision_result_ignored",
+                f"Ignored camera inspection for {product_id}; no matching product is waiting at vision.",
+                severity=Severity.WARNING,
+                source="vision",
+                data=dict(payload),
+            )
+            return self.snapshot()
+        product = self.tracker.get(product_id)
+        result = self.vision_inspector.from_external_payload(payload, product)
+        self.pending_vision_product_id = None
+        self.pending_vision_started_tick = None
+        self.last_inspection_result = result.to_dict()
+        self._apply_vision_result(product, result)
+        if self.running and self._line_can_move():
+            self._assign_work()
+        return self.snapshot()
+
     def recover_machine(self, machine_id: str) -> dict[str, Any]:
         station = self._station(machine_id)
         before_state = station.state
@@ -372,6 +411,9 @@ class FactorySupervisor:
             },
             "route_status": self._route_status(),
             "visual_sync": dict(VISUAL_SYNC),
+            "vision_source": self.vision_source,
+            "pending_vision_product_id": self.pending_vision_product_id,
+            "last_inspection_result": self.last_inspection_result,
             "gazebo_visuals": self.gazebo_visuals,
         }
 
@@ -387,41 +429,29 @@ class FactorySupervisor:
     def _handle_completed_operation(self, operation: CompletedOperation) -> None:
         station = self._station(operation.machine_id)
         product = self.tracker.get(operation.product_id)
+
+        if operation.machine_id == "vision":
+            self._handle_vision_operation_completed(product)
+            return
+
         self.tracker.complete_process(product.product_id, operation.process)
         self.tracker.assign_station(product.product_id, None)
 
-        if operation.machine_id == "vision":
-            result = self.vision_inspector.inspect(product)
-            product.inspection_confidence = result.confidence
-            if not result.passed:
-                rejected = self.tracker.mark_quality(
-                    product.product_id,
-                    accepted=False,
-                    reason=result.defect_reason or "Vision inspection failed",
-                )
-                self._persist_product(rejected)
-                self._emit(
-                    "product_rejected",
-                    f"{product.product_id} rejected by vision: {rejected.defect_reason}.",
-                    severity=Severity.WARNING,
-                    source="vision",
-                    data={"product_id": product.product_id, "inspection": result.to_dict()},
-                )
-                return
-            self.tracker.queue(product.product_id, "processing_buffer")
-            self.processing_queue.append(product.product_id)
-            self._emit(
-                "vision_passed",
-                f"{product.product_id} identified as {product.display_name} with {result.confidence:.0%} confidence.",
-                source="vision",
-                data={"product_id": product.product_id, "inspection": result.to_dict()},
-            )
-        elif operation.machine_id == "quality":
-            accepted = "quality_defect" not in product.defect_flags
+        if operation.machine_id == "quality":
+            quality_reasons = {
+                "wrong_shape": "Shape does not match recipe",
+                "missing_part": "Required part is missing",
+                "quality_defect": "Final quality check failed",
+            }
+            detected_defects = [
+                flag for flag in quality_reasons if flag in product.defect_flags
+            ]
+            reason = "; ".join(quality_reasons[flag] for flag in detected_defects) or None
+            accepted = not detected_defects
             finalized = self.tracker.mark_quality(
                 product.product_id,
                 accepted=accepted,
-                reason=None if accepted else "Final quality check failed",
+                reason=reason,
             )
             history = self.product_tick_history.setdefault(
                 product.product_id,
@@ -432,10 +462,17 @@ class FactorySupervisor:
             severity = Severity.INFO if accepted else Severity.WARNING
             self._emit(
                 event_type,
-                f"{product.product_id} sent to {finalized.current_location}.",
+                f"{product.product_id} sent to {finalized.current_location}."
+                + (f" Quality control: {reason}." if reason else ""),
                 severity=severity,
                 source="quality",
-                data={"product_id": product.product_id, "accepted": accepted},
+                data={
+                    "product_id": product.product_id,
+                    "accepted": accepted,
+                    "defect_flags": detected_defects,
+                    "defect_reason": reason,
+                    "inspection_method": "simulated_quality_control",
+                },
             )
         else:
             next_process = product.next_process()
@@ -453,6 +490,59 @@ class FactorySupervisor:
             )
         self._persist_product(product)
 
+    def _handle_vision_operation_completed(self, product: Product) -> None:
+        if self.vision_source == "gazebo":
+            self.pending_vision_product_id = product.product_id
+            self.pending_vision_started_tick = self.tick_count
+            product.status = ProductStatus.PROCESSING
+            product.assigned_station = "vision"
+            product.mark_updated()
+            self._persist_product(product)
+            self._emit(
+                "vision_camera_waiting",
+                f"{product.product_id} is waiting for Gazebo camera inspection.",
+                source="vision",
+                data={
+                    "product_id": product.product_id,
+                    "source": "gazebo_camera",
+                    "timeout_ticks": self.vision_timeout_ticks,
+                },
+            )
+            return
+
+        result = self.vision_inspector.inspect(product)
+        self.last_inspection_result = result.to_dict()
+        self._apply_vision_result(product, result)
+
+    def _apply_vision_result(self, product: Product, result) -> None:
+        self.tracker.complete_process(product.product_id, "visual_inspection")
+        self.tracker.assign_station(product.product_id, None)
+        product.inspection_confidence = result.confidence
+        if not result.passed:
+            rejected = self.tracker.mark_quality(
+                product.product_id,
+                accepted=False,
+                reason=result.defect_reason or "Vision inspection failed",
+            )
+            self._persist_product(rejected)
+            self._emit(
+                "product_rejected",
+                f"{product.product_id} rejected by vision: {rejected.defect_reason}.",
+                severity=Severity.WARNING,
+                source="vision",
+                data={"product_id": product.product_id, "inspection": result.to_dict()},
+            )
+            return
+        self.tracker.queue(product.product_id, "processing_buffer")
+        self.processing_queue.append(product.product_id)
+        self._persist_product(product)
+        self._emit(
+            "vision_passed",
+            f"{product.product_id} identified as {product.display_name} with {result.confidence:.0%} confidence.",
+            source="vision",
+            data={"product_id": product.product_id, "inspection": result.to_dict()},
+        )
+
     def _assign_work(self) -> None:
         self._assign_input_to_vision()
         self._assign_processing_queue()
@@ -460,6 +550,8 @@ class FactorySupervisor:
 
     def _assign_input_to_vision(self) -> None:
         if not self.input_queue:
+            return
+        if self.pending_vision_product_id:
             return
         vision = self.stations.get("vision")
         if not vision or not vision.can_accept("visual_inspection"):
@@ -579,6 +671,26 @@ class FactorySupervisor:
                 action=action,
             )
         return False
+
+    def _expire_pending_vision_inspection(self) -> None:
+        if not self.pending_vision_product_id or self.pending_vision_started_tick is None:
+            return
+        if self.tick_count - self.pending_vision_started_tick < self.vision_timeout_ticks:
+            return
+        product = self.tracker.get(self.pending_vision_product_id)
+        self._emit(
+            "vision_camera_timeout",
+            f"Gazebo camera inspection timed out for {product.product_id}; using synthetic fallback.",
+            severity=Severity.WARNING,
+            source="vision",
+            data={"product_id": product.product_id, "source": "synthetic_fallback"},
+        )
+        self.pending_vision_product_id = None
+        self.pending_vision_started_tick = None
+        result = self.vision_inspector.inspect(product)
+        result = replace(result, method=f"{result.method}_after_camera_timeout")
+        self.last_inspection_result = result.to_dict()
+        self._apply_vision_result(product, result)
 
     def _detect_faults(self) -> None:
         for detected in self.fault_detector.evaluate(self.stations):

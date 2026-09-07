@@ -88,7 +88,13 @@ def test_ros_launch_accepts_runtime_backend_url():
 
     assert "DeclareLaunchArgument(" in launch_source
     assert 'LaunchConfiguration("backend_url")' in launch_source
+    assert 'LaunchConfiguration("project_root")' in launch_source
+    assert 'LaunchConfiguration("enable_vision")' in launch_source
     assert launch_source.count('parameters=[{"backend_url": backend_url}]') == 3
+    assert "vision_inspector_node" in launch_source
+    assert "IfCondition(enable_vision)" in launch_source
+    assert "/reconfactory/vision/image_raw" in launch_source
+    assert "/reconfactory/vision/result" in launch_source
 
 
 def test_one_command_runner_starts_and_checks_ros_nodes():
@@ -100,3 +106,17 @@ def test_one_command_runner_starts_and_checks_ros_nodes():
     assert '"/reconfactory_station_controller"' in runner
     assert '"/reconfactory_fault_detector"' in runner
     assert '"/reconfactory_logger"' in runner
+    assert '"/reconfactory_vision_inspector"' in runner
+    assert "ros_gz_bridge parameter_bridge" in runner
+    assert 'VISION_SOURCE="gazebo"' in runner
+    assert "CV_BRIDGE_AVAILABLE" in runner
+    assert "CAMERA_VISION_AVAILABLE" in runner
+
+
+def test_vision_pipeline_checker_lists_expected_topics():
+    checker = (ROOT / "scripts" / "check_vision_pipeline.py").read_text(encoding="utf-8")
+
+    assert "/reconfactory_vision_inspector" in checker
+    assert "/reconfactory/vision/image_raw" in checker
+    assert "/reconfactory/vision/result" in checker
+    assert "/reconfactory/vision/debug_image" in checker

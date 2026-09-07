@@ -32,6 +32,9 @@ if ! command -v colcon >/dev/null 2>&1; then
 fi
 
 BACKEND_URL="${RECONFACTORY_BACKEND_URL:-http://127.0.0.1:8000}"
+PROJECT_ROOT="$(pwd)"
+export RECONFACTORY_PROJECT_ROOT="${RECONFACTORY_PROJECT_ROOT:-${PROJECT_ROOT}}"
+ENABLE_VISION_NODE="${RECONFACTORY_ENABLE_VISION_NODE:-true}"
 WORKSPACE="$(pwd)/ros2_ws"
 PACKAGE_SOURCE="${WORKSPACE}/src/reconfactory_ros"
 BUILD_STAMP="${WORKSPACE}/build/reconfactory_ros/.reconfactory_source_stamp"
@@ -65,4 +68,6 @@ set -u
 
 echo "Launching ROS 2 bridge for ${BACKEND_URL}..."
 exec ros2 launch reconfactory_ros reconfactory_bridge.launch.py \
-  backend_url:="${BACKEND_URL}"
+  backend_url:="${BACKEND_URL}" \
+  project_root:="${RECONFACTORY_PROJECT_ROOT}" \
+  enable_vision:="${ENABLE_VISION_NODE}"

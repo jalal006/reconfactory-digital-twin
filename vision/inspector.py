@@ -28,6 +28,15 @@ class InspectionResult:
         }
 
 
+REASON_MAP = {
+    "incorrect_colour": "Colour does not match recipe",
+    "incorrect_shape": "Shape does not match recipe",
+    "missing_section_or_invalid_dimensions": "Required part is missing",
+    "no_product_contour_detected": "No product contour detected",
+    "No product contour detected": "No product contour detected",
+}
+
+
 class VisionInspector:
     def __init__(self, recipes: dict[str, ProductRecipe]) -> None:
         self.recipes = recipes
@@ -56,16 +65,45 @@ class VisionInspector:
             missing_section="missing_part" in product.defect_flags,
         )
         result, features = self._opencv.inspect_image(image, recipe)
-        reason_map = {
-            "incorrect_colour": "Colour does not match recipe",
-            "incorrect_shape": "Shape does not match recipe",
-            "missing_section_or_invalid_dimensions": "Required part is missing",
-        }
         return replace(
             result,
-            defect_reason=reason_map.get(result.defect_reason, result.defect_reason),
+            defect_reason=REASON_MAP.get(result.defect_reason, result.defect_reason),
             method="opencv",
             features=features.to_dict(),
+        )
+
+    @staticmethod
+    def from_external_payload(payload: dict[str, Any], product: Product) -> InspectionResult:
+        accepted_value = payload.get("accepted")
+        if accepted_value is None:
+            accepted_value = payload.get("passed", False)
+        accepted = bool(accepted_value)
+        confidence = float(payload.get("confidence") or 0.0)
+        detected_type = payload.get("detected_type")
+        if accepted and detected_type is None:
+            detected_type = product.product_type
+        defect_reason = payload.get("defect_reason")
+        features = dict(payload.get("features") or {})
+        for key in (
+            "detected_color",
+            "detected_shape",
+            "area_ratio",
+            "missing_material",
+            "frame_count",
+            "source",
+            "inspection_latency_ms",
+        ):
+            if key in payload and key not in features:
+                features[key] = payload[key]
+        if "detected_color" in features and "dominant_color" not in features:
+            features["dominant_color"] = features["detected_color"]
+        return InspectionResult(
+            passed=accepted,
+            confidence=confidence,
+            detected_type=str(detected_type) if detected_type else None,
+            defect_reason=REASON_MAP.get(defect_reason, defect_reason),
+            method=str(payload.get("source") or payload.get("inspection_method") or "external"),
+            features=features,
         )
 
     @staticmethod

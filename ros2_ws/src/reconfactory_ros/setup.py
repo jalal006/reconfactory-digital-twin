@@ -11,6 +11,7 @@ setup(
         ("share/" + package_name, ["package.xml"]),
         ("share/" + package_name + "/launch", ["launch/reconfactory_bridge.launch.py"]),
         ("share/" + package_name + "/config", ["config/bridge.yaml"]),
+        ("share/" + package_name + "/rviz", ["rviz/vision_debug.rviz"]),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -24,6 +25,7 @@ setup(
             "station_controller_node = reconfactory_ros.station_controller_node:main",
             "fault_detector_node = reconfactory_ros.fault_detector_node:main",
             "logger_node = reconfactory_ros.logger_node:main",
+            "vision_inspector_node = reconfactory_ros.vision_inspector_node:main",
         ],
     },
 )
