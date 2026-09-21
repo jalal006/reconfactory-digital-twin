@@ -11,6 +11,7 @@ from typing import Any
 
 from vision.inspector import VisionInspector
 
+from .amr_transport import FactoryTransport
 from .config import (
     load_fault_rules,
     load_machine_configs,
@@ -61,6 +62,7 @@ class FactorySupervisor:
         reset_database: bool = False,
         vision_source: str | None = None,
         vision_timeout_ticks: int = 5,
+        transport_mode: str | None = None,
     ) -> None:
         self.config_dir = Path(config_dir)
         self.recipes = load_product_recipes(self.config_dir)
@@ -97,6 +99,20 @@ class FactorySupervisor:
         if self.vision_source not in {"synthetic", "gazebo"}:
             self.vision_source = "synthetic"
         self.vision_timeout_ticks = max(1, int(vision_timeout_ticks))
+        self.transport_mode = (
+            transport_mode or os.getenv("TRANSPORT_MODE") or "simulated"
+        ).lower()
+        if self.transport_mode not in {"simulated", "amr"}:
+            raise ValueError("TRANSPORT_MODE must be simulated or amr")
+        self.transport = (
+            FactoryTransport(
+                self,
+                Path(__file__).resolve().parents[1]
+                / "ros2_ws/src/reconfactory_amr/config/stations.yaml",
+            )
+            if self.transport_mode == "amr"
+            else None
+        )
         self.pending_vision_product_id: str | None = None
         self.pending_vision_started_tick: int | None = None
         self.last_inspection_result: dict[str, Any] | None = None
@@ -129,6 +145,8 @@ class FactorySupervisor:
         return self.snapshot()
 
     def stop(self) -> dict[str, Any]:
+        if self.transport:
+            self.transport.cancel()
         self.running = False
         self.paused_by_fault = False
         self.last_decision = "Production paused by operator."
@@ -145,10 +163,13 @@ class FactorySupervisor:
             reset_database=clear_database,
             vision_source=self.vision_source,
             vision_timeout_ticks=self.vision_timeout_ticks,
+            transport_mode=self.transport_mode,
         )
         return self.snapshot()
 
     def emergency_stop(self) -> dict[str, Any]:
+        if self.transport:
+            self.transport.cancel()
         self.running = False
         for station in self.stations.values():
             station.emergency_stop()
@@ -180,6 +201,8 @@ class FactorySupervisor:
         return product
 
     def tick(self, steps: int = 1) -> dict[str, Any]:
+        if self.transport:
+            self.transport.check_timeout()
         for _ in range(max(1, steps)):
             if not self.running:
                 break
@@ -201,6 +224,11 @@ class FactorySupervisor:
         return self.snapshot()
 
     def is_idle(self) -> bool:
+        if self.transport:
+            return not self.transport.active and all(
+                p.status in {ProductStatus.COMPLETED, ProductStatus.REJECTED}
+                for p in self.tracker.all()
+            )
         active_station = any(
             station.state == MachineState.RUNNING for station in self.stations.values()
         )
@@ -392,6 +420,8 @@ class FactorySupervisor:
         stats = self._stats(products, machines)
         return {
             "running": self.running,
+            "transport_mode": self.transport_mode,
+            "transport": self.transport.snapshot() if self.transport else None,
             "tick": self.tick_count,
             "simulation_speed": self.simulation_speed,
             "last_decision": self.last_decision,
@@ -448,6 +478,9 @@ class FactorySupervisor:
             ]
             reason = "; ".join(quality_reasons[flag] for flag in detected_defects) or None
             accepted = not detected_defects
+            if self.transport:
+                self.transport.finish_quality(product, accepted, reason)
+                return
             finalized = self.tracker.mark_quality(
                 product.product_id,
                 accepted=accepted,
@@ -477,10 +510,16 @@ class FactorySupervisor:
         else:
             next_process = product.next_process()
             if next_process == "quality_check":
-                self.tracker.queue(product.product_id, "quality_buffer")
+                self.tracker.queue(
+                    product.product_id,
+                    product.current_location if self.transport else "quality_buffer",
+                )
                 self.quality_queue.append(product.product_id)
             elif next_process:
-                self.tracker.queue(product.product_id, "processing_buffer")
+                self.tracker.queue(
+                    product.product_id,
+                    product.current_location if self.transport else "processing_buffer",
+                )
                 self.processing_queue.append(product.product_id)
             self._emit(
                 "process_completed",
@@ -519,6 +558,11 @@ class FactorySupervisor:
         self.tracker.assign_station(product.product_id, None)
         product.inspection_confidence = result.confidence
         if not result.passed:
+            if self.transport:
+                self.transport.finish_quality(
+                    product, False, result.defect_reason or "Vision inspection failed"
+                )
+                return
             rejected = self.tracker.mark_quality(
                 product.product_id,
                 accepted=False,
@@ -533,7 +577,10 @@ class FactorySupervisor:
                 data={"product_id": product.product_id, "inspection": result.to_dict()},
             )
             return
-        self.tracker.queue(product.product_id, "processing_buffer")
+        self.tracker.queue(
+            product.product_id,
+            product.current_location if self.transport else "processing_buffer",
+        )
         self.processing_queue.append(product.product_id)
         self._persist_product(product)
         self._emit(
@@ -544,6 +591,9 @@ class FactorySupervisor:
         )
 
     def _assign_work(self) -> None:
+        if self.transport:
+            self.transport.dispatch()
+            return
         self._assign_input_to_vision()
         self._assign_processing_queue()
         self._assign_quality_queue()
@@ -744,6 +794,26 @@ class FactorySupervisor:
         self, station: StationController, fault: FaultRecord
     ) -> RecoveryAction:
         action = self.reconfiguration_manager.create_action(fault.fault_id, station.machine_id)
+        if self.transport:
+            released = station.release_product_for_recovery()
+            if released:
+                product = self.tracker.get(released.product_id)
+                product.assigned_station = None
+                product.status = ProductStatus.QUEUED
+                product.recovery_notes.append(
+                    f"Waiting for AMR rerouting after {station.config.name} fault"
+                )
+                self._persist_product(product)
+            if (
+                self.transport.active
+                and self.transport.active.destination == station.machine_id
+            ):
+                self.transport.cancel()
+            if station.config.machine_type == "conveyor":
+                self.transport.cancel()
+                self.paused_by_fault = self.running
+                self.running = False
+            return action
         released = station.release_product_for_recovery()
         if released:
             product = self.tracker.get(released.product_id)
@@ -800,6 +870,8 @@ class FactorySupervisor:
         self.processing_queue = retained
 
     def _resume_paused_products(self) -> list[str]:
+        if self.transport:
+            return []  # Failed/cancelled transports require an explicit payload reset.
         resumed: list[str] = []
         for product in self.tracker.by_status(ProductStatus.PAUSED):
             process = product.next_process()

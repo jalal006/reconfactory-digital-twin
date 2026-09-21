@@ -82,3 +82,21 @@ FactorySupervisor product state
 
 The ROS 2 vision node performs perception only. It does not accept, reject,
 route, or persist products by itself.
+
+## Optional AMR Transport
+
+`FactorySupervisor` owns a ROS-independent `FactoryTransport` delivery gate when
+`TRANSPORT_MODE=amr`. It asks the existing `ProductionScheduler` for a compatible,
+unoccupied station, records a `TransportRequest`, and keeps the product at its
+origin with `in_transit` status. The AMR manager navigates to pickup and then
+delivery using two standard Nav2 actions. Only a validated `delivered` status
+changes product location and permits station processing. Final output delivery
+is gated in the same way. Duplicate/stale results cannot advance production.
+
+The existing Gazebo sync process is the sole product-pose writer: it carries
+cargo above the robot during the delivery phase, then places it at the confirmed
+station. It never teleports the robot. The browser displays confirmed station
+transitions, not predictive conveyor transfers, in this mode.
+
+See [AMR Navigation](AMR_NAVIGATION.md) for TF ownership, task contracts, failure
+handling, static-map generation and verification.

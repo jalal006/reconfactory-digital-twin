@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -73,7 +74,31 @@ class VisionResultRequest(BaseModel):
     features: dict[str, Any] = Field(default_factory=dict)
 
 
-supervisor = FactorySupervisor(db_path=ROOT / "data" / "factory.db")
+class RobotPose(BaseModel):
+    x: float = Field(allow_inf_nan=False)
+    y: float = Field(allow_inf_nan=False)
+    z: float = Field(default=0.16, allow_inf_nan=False)
+    yaw: float = Field(allow_inf_nan=False)
+
+
+class TransportHeartbeat(BaseModel):
+    ready: bool
+    robot_pose: RobotPose | None = None
+
+
+class TransportStatusRequest(BaseModel):
+    task_id: str
+    product_id: str
+    destination: str
+    status: Literal["accepted", "navigating", "delivered", "failed", "cancelled"]
+    phase: Literal["pickup", "delivery"] = "pickup"
+    navigation_time_s: float = Field(default=0.0, ge=0, allow_inf_nan=False)
+    failure_reason: str | None = None
+
+
+supervisor = FactorySupervisor(
+    db_path=Path(os.getenv("RECONFACTORY_DB_PATH", str(ROOT / "data" / "factory.db")))
+)
 _simulation_task: asyncio.Task[None] | None = None
 
 
@@ -103,6 +128,8 @@ async def _simulation_loop() -> None:
     while True:
         if supervisor.running:
             supervisor.tick()
+        elif supervisor.transport:
+            supervisor.transport.check_timeout()
         await asyncio.sleep(AUTO_TICK_SECONDS / supervisor.simulation_speed)
 
 
@@ -119,6 +146,36 @@ async def status() -> dict[str, Any]:
 @app.get("/api/integrations")
 async def integrations() -> dict[str, Any]:
     return await asyncio.to_thread(check_integrations)
+
+
+@app.get("/api/transport")
+async def transport_state() -> dict[str, Any]:
+    return {
+        "mode": supervisor.transport_mode,
+        "running": supervisor.running,
+        **(supervisor.transport.snapshot() if supervisor.transport else {}),
+    }
+
+
+@app.post("/api/transport/heartbeat")
+async def transport_heartbeat(payload: TransportHeartbeat) -> dict[str, bool]:
+    if not supervisor.transport:
+        raise HTTPException(409, "AMR mode is disabled")
+    supervisor.transport.heartbeat(
+        payload.ready, payload.robot_pose.model_dump() if payload.robot_pose else None
+    )
+    return {"ok": True}
+
+
+@app.post("/api/transport/status")
+async def transport_status(payload: TransportStatusRequest) -> dict[str, bool]:
+    if not supervisor.transport:
+        raise HTTPException(409, "AMR mode is disabled")
+    try:
+        supervisor.transport.receive(payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"ok": True}
 
 
 @app.get("/api/experiments/recovery")

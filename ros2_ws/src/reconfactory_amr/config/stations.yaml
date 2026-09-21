@@ -1,0 +1,11 @@
+# Dock poses in the world/map frame, adjacent to existing station footprints.
+# Product placement remains at the existing inspection/processing surface.
+stations:
+  home: {x: -0.8, y: 0.0, yaw: 0.0}
+  input_queue: {x: 0.0, y: 0.7, yaw: 1.5708}
+  vision: {x: 2.0, y: 0.7, yaw: 1.5708}
+  station_a: {x: 4.2, y: 0.7, yaw: 1.5708}
+  station_b: {x: 4.2, y: -0.7, yaw: -1.5708}
+  quality: {x: 6.4, y: 0.7, yaw: 1.5708}
+  accepted_output: {x: 8.6, y: 0.7, yaw: 1.5708}
+  reject_output: {x: 8.6, y: -0.7, yaw: -1.5708}

@@ -89,6 +89,23 @@ function runFrontendMovementTests(source) {
         "Fault recovery must still allow movement to the recovery buffer");
     }
   `;
+  const amrChecks = `
+    visualProducts.clear();
+    const product = { product_id: "P-AMR", product_type: "red_block", status: "in_transit", current_location: "input_queue", route: ["input_queue", "vision"] };
+    const state = { running: true, transport_mode: "amr", products: [product], gazebo_visuals: { source: "gazebo", updated_at: Date.now()/1000, product_locations: { "P-AMR": "input_queue" } } };
+    updateProductTargets(state);
+    const visual = visualProducts.get("P-AMR");
+    assert(visual.location === "input_queue" && !visual.route, "AMR must not predict arrival from a Gazebo pickup report");
+    product.current_location = "vision";
+    product.status = "processing";
+    updateProductTargets(state);
+    assert(visual.destination === "vision", "Successful delivery must animate the confirmed station");
+    clock.now += 5000;
+    updateProductTargets(state);
+    product.status = "paused";
+    updateProductTargets(state);
+    assert(visual.location === "vision" && !visual.route, "Cancelled AMR load must not jump to recovery buffer");
+  `;
   const clock = { now: 0 };
   const document = {
     getElementById: () => ({ addEventListener() {} }),
@@ -96,11 +113,11 @@ function runFrontendMovementTests(source) {
   };
   const run = new Function(
     "document", "window", "fetch", "requestAnimationFrame", "performance", "clock",
-    source + "\n" + checks,
+    source + "\n" + checks + "\n" + amrChecks,
   );
   run(document, { addEventListener() {} }, () => new Promise(() => {}), () => 1,
     { now: () => clock.now }, clock);
-  return "8 browser movement scenarios passed";
+  return "9 browser movement scenarios passed";
 }
 
 if (typeof require === "function") {

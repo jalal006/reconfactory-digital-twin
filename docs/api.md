@@ -21,6 +21,29 @@ POST /api/start
 POST /api/stop
 ```
 
+## AMR Transport
+
+With `TRANSPORT_MODE=amr`, the supervisor remains the production authority.
+The AMR manager uses these integration endpoints:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/transport` | Mode, running state, readiness, active task and robot pose |
+| `POST /api/transport/heartbeat` | Report Nav2/localization readiness and optional finite robot pose |
+| `POST /api/transport/status` | Report an active task's pickup/delivery progress |
+
+Status fields are `task_id`, `product_id`, `destination`, `status`, `phase`,
+`navigation_time_s`, and optional `failure_reason`. Status is one of `accepted`,
+`navigating`, `delivered`, `failed`, or `cancelled`; phase is `pickup` or
+`delivery`. Invalid task transitions return HTTP 409. Writes return HTTP 409
+when AMR mode is disabled; invalid request fields return HTTP 422.
+
+These endpoints are for the trusted local simulation manager, not manual
+delivery shortcuts. The manager reports delivery only after Nav2 succeeds;
+products remain at their last confirmed station until then. Stop cancels active
+navigation in AMR mode. Failed/cancelled payload tasks require Reset.
+See [AMR Navigation](AMR_NAVIGATION.md) for contracts and limitations.
+
 ## Add Product
 
 ```http

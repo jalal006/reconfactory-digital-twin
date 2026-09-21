@@ -18,7 +18,9 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
+from xml.etree import ElementTree as ET
 
 LAYOUT = {
     "input_queue": (0.25, 0.0, 0.54),
@@ -558,6 +560,62 @@ def product_sdf(
 """.strip()
 
 
+def amr_product_sdf(model_name: str, product_type: str, defects: list[str]) -> str:
+    """Carry the cargo only, above the laser plane, without the legacy display cart."""
+    root = ET.fromstring(product_sdf(model_name, product_type, defects))
+    body = root.find("model/link")
+    for visual in list(body.findall("visual")):
+        if visual.get("name") not in {"cargo", "cargo_main", "cargo_lobe"}:
+            body.remove(visual)
+            continue
+        pose = visual.find("pose")
+        values = pose.text.split()
+        box = visual.findtext("geometry/box/size")
+        height = float(box.split()[2] if box else visual.findtext("geometry/cylinder/length"))
+        values[2] = str(height / 2)
+        pose.text = " ".join(values)
+    return ET.tostring(root, encoding="unicode")
+
+
+def amr_station_surfaces(world_path: Path | None = None) -> dict[str, Pose]:
+    """Bare cargo rests on the actual SDF surface, not the legacy cart origin."""
+    names = {
+        "input_queue": ("input_station", "low_tray"),
+        "vision": ("vision_camera_station", "inspection_table"),
+        "station_a": ("processing_station_a", "work_plate"),
+        "station_b": ("processing_station_b", "work_plate"),
+        "quality": ("quality_control_station", "scan_table"),
+        "accepted_output": ("accepted_output_bin", "tray"),
+        "reject_output": ("reject_output_bin", "tray"),
+    }
+    world = (
+        ET.parse(
+            world_path or Path(__file__).resolve().parents[1] / "worlds/reconfactory.world.sdf"
+        )
+        .getroot()
+        .find("world")
+    )
+    surfaces = {}
+    for location, (model_name, visual_name) in names.items():
+        model = world.find(f"model[@name='{model_name}']")
+        link = model.find("link")
+        visual = link.find(f"visual[@name='{visual_name}']")
+        x = y = z = yaw = 0.0
+        for item in (model, link, visual):
+            px, py, pz, _, _, rotation = map(
+                float, (item.findtext("pose") or "0 0 0 0 0 0").split()
+            )
+            x, y, z = (
+                x + math.cos(yaw) * px - math.sin(yaw) * py,
+                y + math.sin(yaw) * px + math.cos(yaw) * py,
+                z + pz,
+            )
+            yaw += rotation
+        top = float(visual.findtext("geometry/box/size").split()[2]) / 2
+        surfaces[location] = Pose(x, y, z + top + 0.005, yaw)
+    return surfaces
+
+
 def status_light_sdf(model_name: str, state: str) -> str:
     color = rgba(STATUS_COLORS.get(state, STATUS_COLORS["idle"]))
     return f"""
@@ -975,8 +1033,58 @@ class GazeboSync:
         if self.product_dwelled_destination.get(model_name) != destination:
             self.product_dwelled_destination.pop(model_name, None)
 
+    def sync_amr_products(self, state: dict[str, Any]) -> None:
+        if not hasattr(self, "amr_surfaces"):
+            world_path = Path(__file__).resolve().parents[2] / "data/amr/factory.world.sdf"
+            self.amr_surfaces = amr_station_surfaces(world_path)
+        transport = state.get("transport") or {}
+        task = transport.get("active_task") or {}
+        robot = transport.get("robot_pose")
+        live = set()
+        for product in state.get("products", []):
+            product_id = product["product_id"]
+            name = self.product_model_name(product_id)
+            live.add(name)
+            self.product_ids_by_model[name] = product_id
+            location = product["current_location"]
+            target = self.amr_surfaces[location]
+            carrying = task.get("product_id") == product_id and task.get("phase") == "delivery"
+            if carrying:
+                location = "amr_payload"
+                if robot:
+                    target = Pose(robot["x"], robot["y"], robot["z"] + 0.19, robot["yaw"])
+                elif name in self.product_poses:
+                    target = self.product_poses[name]
+                else:
+                    continue  # No known robot pose: never invent a payload position.
+            if name not in self.spawned_products:
+                self.create_model(
+                    name,
+                    amr_product_sdf(
+                        name, product.get("product_type", ""), product.get("defect_flags", [])
+                    ),
+                    target,
+                )
+                self.spawned_products.add(name)
+            elif (
+                pose_distance(self.product_poses[name], target) > 0.01
+                or abs(self.product_poses[name].yaw - target.yaw) > 0.02
+            ):
+                self.set_pose(name, target)
+            self.product_poses[name] = target
+            self.product_locations[name] = location
+        for name in self.spawned_products - live:
+            self.remove_model(name)
+            self.product_poses.pop(name, None)
+            self.product_locations.pop(name, None)
+            self.product_ids_by_model.pop(name, None)
+        self.spawned_products.intersection_update(live)
+
     def sync_product_targets(self, state: dict[str, Any]) -> None:
         self.latest_state = state
+        if state.get("transport_mode") == "amr":
+            self.sync_amr_products(state)
+            return
         running = bool(state.get("running", True))
         tick = int(state.get("tick", 0))
         if self.last_tick is not None and tick < self.last_tick:
@@ -1085,6 +1193,8 @@ class GazeboSync:
             self.product_ids_by_model.pop(model_name, None)
 
     def advance_products(self) -> None:
+        if (self.latest_state or {}).get("transport_mode") == "amr":
+            return
         now = time.monotonic()
         running = bool((self.latest_state or {}).get("running", True))
         for model_name in list(self.spawned_products):

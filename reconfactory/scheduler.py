@@ -39,11 +39,12 @@ class ProductionScheduler:
         product: Product,
         process: str,
         machine_type: str | None = "processing",
+        excluded: set[str] | None = None,
     ) -> StationController | None:
         candidates = [
             station
             for station in self.compatible_stations(process, machine_type)
-            if station.can_accept(process)
+            if station.can_accept(process) and station.machine_id not in (excluded or set())
         ]
         if not candidates:
             return None

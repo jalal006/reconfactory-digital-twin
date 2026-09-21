@@ -1,5 +1,16 @@
 # Demo Scenarios
 
+## AMR Portfolio Demo (45-60 Seconds)
+
+Run the [AMR setup](AMR_NAVIGATION.md) first and wait for `AMR ready`.
+Record the browser, Gazebo and optional RViz side by side. Show one red product
+waiting at Input, then the robot picking it up and navigating to Vision. Show
+the task's `navigating` and `delivered` events alongside the camera debug image.
+Finish with the robot delivering to Processing A and the machine starting only
+after delivery. Use clearly labeled cuts/time compression to show Quality and
+Accepted: a full conservative-speed production cycle takes longer than a minute.
+Do not describe logical payload placement as physical grasping.
+
 ## Demo 1: Normal Production
 
 1. Click `Start`.

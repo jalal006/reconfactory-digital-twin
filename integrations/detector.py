@@ -39,6 +39,7 @@ def check_integrations() -> dict[str, object]:
         _ros_gz_bridge_status(),
         _cv_bridge_status(),
         _colcon_status(),
+        _nav2_status(),
         _opcua_status(),
     ]
     return {
@@ -147,6 +148,24 @@ def _ros_gz_bridge_status() -> IntegrationStatus:
             if available
             else "Required for Gazebo camera mode. Install ros-jazzy-ros-gz."
         ),
+    )
+
+
+def _nav2_status() -> IntegrationStatus:
+    available = bool(
+        _bash_output(
+            "source /opt/ros/jazzy/setup.bash 2>/dev/null && "
+            "ros2 pkg prefix nav2_bringup >/dev/null 2>&1 && "
+            "ros2 pkg prefix nav2_smac_planner >/dev/null 2>&1 && "
+            "ros2 pkg prefix nav2_regulated_pure_pursuit_controller >/dev/null 2>&1 && echo installed"
+        )
+    )
+    return IntegrationStatus(
+        name="nav2",
+        installed=available,
+        detail="Optional AMR navigation packages installed."
+        if available
+        else "Optional AMR mode: install ros-jazzy-navigation2 ros-jazzy-nav2-bringup.",
     )
 
 

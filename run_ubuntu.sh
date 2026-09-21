@@ -50,6 +50,21 @@ fi
 source .venv-wsl/bin/activate
 python -m pip install -r requirements.txt
 
+export TRANSPORT_MODE="${TRANSPORT_MODE:-simulated}"
+if [ "${TRANSPORT_MODE}" = "amr" ]; then
+  if [ "${GAZEBO_AVAILABLE}" != true ] || [ "${ROS_AVAILABLE}" != true ]; then
+    echo "AMR mode requires Gazebo and ROS 2 Jazzy; refusing simulated delivery fallback."
+    exit 1
+  fi
+  for package in nav2_bringup nav2_smac_planner nav2_regulated_pure_pursuit_controller ros_gz_sim ros_gz_bridge robot_state_publisher xacro; do
+    if ! ros2 pkg prefix "${package}" >/dev/null 2>&1; then
+      echo "Missing ROS package: ${package}. See docs/AMR_NAVIGATION.md."
+      exit 1
+    fi
+  done
+  python scripts/generate_amr_map.py
+fi
+
 APP_PORT="${PORT:-8000}"
 WSL_IP="$(hostname -I | awk '{print $1}')"
 export RECONFACTORY_PUBLIC_URL="http://${WSL_IP}:${APP_PORT}"
@@ -68,17 +83,28 @@ if [ "${VISION_SOURCE}" = "gazebo" ] && [ "${CAMERA_VISION_AVAILABLE}" != true ]
 fi
 BACKEND_URL="http://127.0.0.1:${APP_PORT}"
 WORLD="$(pwd)/gazebo_fallback/worlds/reconfactory.world.sdf"
+if [ "${TRANSPORT_MODE}" = "amr" ]; then
+  WORLD="$(pwd)/data/amr/factory.world.sdf"
+fi
 BRIDGE_CONFIG="$(pwd)/gazebo_fallback/config/ros_gz_bridge.yaml"
-LOG_DIR="$(pwd)/logs"
+LOG_DIR="${RECONFACTORY_LOG_DIR:-$(pwd)/logs}"
 mkdir -p "${LOG_DIR}"
 
 PIDS=()
 
 cleanup() {
+  trap - EXIT INT TERM
   echo
   echo "Stopping ReConFactory..."
   for pid in "${PIDS[@]}"; do
-    kill "${pid}" >/dev/null 2>&1 || true
+    kill -TERM -- "-${pid}" >/dev/null 2>&1 || true
+  done
+  local deadline=$((SECONDS + 8))
+  for pid in "${PIDS[@]}"; do
+    while kill -0 "${pid}" >/dev/null 2>&1 && [ "$SECONDS" -lt "$deadline" ]; do
+      sleep 0.1
+    done
+    kill -KILL -- "-${pid}" >/dev/null 2>&1 || true
   done
   wait >/dev/null 2>&1 || true
 }
@@ -86,7 +112,7 @@ trap cleanup EXIT INT TERM
 
 echo "Starting ReConFactory backend..."
 echo "Vision source: ${VISION_SOURCE}"
-python scripts/run_factory.py --host 0.0.0.0 --port "${APP_PORT}" >"${LOG_DIR}/backend.log" 2>&1 &
+setsid python scripts/run_factory.py --host 0.0.0.0 --port "${APP_PORT}" >"${LOG_DIR}/backend.log" 2>&1 &
 PIDS+=("$!")
 
 if ! python - <<PY
@@ -118,7 +144,7 @@ if [ "${ROS_AVAILABLE}" = true ] && command -v colcon >/dev/null 2>&1; then
   RECONFACTORY_ENABLE_VISION_NODE="${CAMERA_VISION_AVAILABLE}" \
   RECONFACTORY_BACKEND_URL="${BACKEND_URL}" \
   RECONFACTORY_ROS_BUILD_LOG="${LOG_DIR}/ros2_build.log" \
-    bash scripts/run_ros_bridge.sh >"${LOG_DIR}/ros2.log" 2>&1 &
+    setsid bash scripts/run_ros_bridge.sh >"${LOG_DIR}/ros2.log" 2>&1 &
   ROS_PID="$!"
   PIDS+=("${ROS_PID}")
 
@@ -155,20 +181,30 @@ fi
 
 if [ "${GAZEBO_AVAILABLE}" = true ]; then
   echo "Starting Gazebo factory..."
-  gz sim -r "${WORLD}" >"${LOG_DIR}/gazebo.log" 2>&1 &
+  GZ_ARGS=(-r)
+  if [ "${GAZEBO_HEADLESS:-0}" = "1" ]; then
+    GZ_ARGS+=(-s --headless-rendering)
+  fi
+  setsid gz sim "${GZ_ARGS[@]}" "${WORLD}" >"${LOG_DIR}/gazebo.log" 2>&1 &
   PIDS+=("$!")
 
   if [ "${CAMERA_VISION_AVAILABLE}" = true ]; then
     echo "Starting ROS-Gazebo camera bridge..."
-    ros2 run ros_gz_bridge parameter_bridge --ros-args -p config_file:="${BRIDGE_CONFIG}" >"${LOG_DIR}/ros_gz_bridge.log" 2>&1 &
+    setsid ros2 run ros_gz_bridge parameter_bridge --ros-args -p config_file:="${BRIDGE_CONFIG}" >"${LOG_DIR}/ros_gz_bridge.log" 2>&1 &
     PIDS+=("$!")
   else
     echo "Gazebo camera vision is unavailable; synthetic OpenCV fallback remains active."
   fi
 
   echo "Starting Gazebo sync bridge..."
-  python gazebo_fallback/scripts/sync_backend_to_gazebo.py --backend-url "${BACKEND_URL}" --poll-interval 0.04 --publish-visuals >"${LOG_DIR}/gazebo_sync.log" 2>&1 &
+  setsid python gazebo_fallback/scripts/sync_backend_to_gazebo.py --backend-url "${BACKEND_URL}" --poll-interval 0.04 --publish-visuals >"${LOG_DIR}/gazebo_sync.log" 2>&1 &
   PIDS+=("$!")
+
+  if [ "${TRANSPORT_MODE}" = "amr" ]; then
+    echo "Starting AMR + Nav2 (first build may take a moment)..."
+    RECONFACTORY_BACKEND_URL="${BACKEND_URL}" setsid bash scripts/run_amr.sh >"${LOG_DIR}/amr.log" 2>&1 &
+    PIDS+=("$!")
+  fi
 else
   echo "Gazebo 'gz' was not found, so only the browser dashboard is running."
 fi
@@ -182,6 +218,9 @@ echo "  ${LOG_DIR}/ros2_build.log"
 echo "  ${LOG_DIR}/ros_gz_bridge.log"
 echo "  ${LOG_DIR}/gazebo.log"
 echo "  ${LOG_DIR}/gazebo_sync.log"
+if [ "${TRANSPORT_MODE}" = "amr" ]; then
+  echo "  ${LOG_DIR}/amr.log"
+fi
 echo
 echo "Press Ctrl+C here to stop all of it."
 

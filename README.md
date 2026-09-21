@@ -6,9 +6,15 @@
 [![Tests](https://github.com/jalal006/reconfactory-digital-twin/actions/workflows/tests.yml/badge.svg)](https://github.com/jalal006/reconfactory-digital-twin/actions/workflows/tests.yml)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-A fault-aware smart factory digital twin with Gazebo RGB camera perception,
-ROS 2 and OpenCV color inspection, an animated browser dashboard, automatic
-rerouting and recovery, and SQLite production analytics.
+A fault-aware smart factory digital twin with Gazebo camera perception,
+ROS 2 / OpenCV inspection, optional Nav2 autonomous robot transport, an animated
+browser dashboard, automatic rerouting and recovery, and SQLite analytics.
+
+An optional **single-AMR transport mode** adds a differential-drive Gazebo robot,
+LiDAR, AMCL localization and Nav2 delivery tasks. The supervisor waits for actual
+navigation success before starting work at the destination.
+AMR mode uses expanded workcells around a central transport aisle, with direct
+drill-to-quality access; the original conveyor layout remains the default.
 
 ## Camera And Control Features
 
@@ -25,8 +31,7 @@ rerouting and recovery, and SQLite production analytics.
   immediate pending feedback, and stationary Gazebo products avoid repeated pose
   commands.
 - A runtime checker verifies delivered camera images and detects duplicate ROS
-  nodes. Regression coverage includes 132 Python tests and eight JavaScript
-  movement scenarios.
+  nodes. Python regression tests and JavaScript movement tests protect both modes.
 
 ## What It Demonstrates
 
@@ -40,6 +45,7 @@ rerouting and recovery, and SQLite production analytics.
 | Data | SQLite events, products, machine snapshots, sensors and faults |
 | Analytics | Throughput, cycle time, utilization, downtime and recovery metrics |
 | Integration | ROS 2 state/fault/command topics and optional OPC UA |
+| Robot transport | One differential-drive AMR, LiDAR, AMCL, Nav2 and delivery-gated production |
 | Quality | Automated regression tests plus Ruff lint and formatting checks |
 
 ## Factory Flow
@@ -69,6 +75,13 @@ flowchart LR
     CAM --> ROSIMG[ROS Image Bridge]
     ROSIMG --> VISNODE[ROS 2 Vision Inspector]
     VISNODE --> API
+    SUP --> TASK[Transport Task]
+    TASK --> AMR[AMR Manager]
+    AMR --> NAV[Nav2 NavigateToPose]
+    NAV --> ROBOT[Gazebo AMR]
+    ROBOT --> SENS[LiDAR + Odometry]
+    SENS --> NAV
+    AMR -->|Delivery Status| SUP
     API --> OPC[Optional OPC UA]
 ```
 
@@ -77,6 +90,10 @@ fault handling and persistence. Browser, Gazebo and ROS 2 integrations consume
 the same backend state.
 
 ## Install And Run
+
+Choose browser-only operation, the default Gazebo conveyor simulation, or the
+optional [AMR transport mode](#autonomous-robot-transport). The default remains
+`TRANSPORT_MODE=simulated`: browser/Windows/Docker need no Nav2 or ROS installation.
 
 ### What You Need
 
@@ -172,6 +189,34 @@ Useful official install references:
 - ROS 2 Jazzy Ubuntu install: <https://docs.ros.org/en/jazzy/Installation/Ubuntu-Install-Debs.html>
 - Gazebo Ubuntu install: <https://gazebosim.org/docs/latest/install_ubuntu/>
 - Gazebo quick test: <https://gazebosim.org/docs/latest/getstarted/>
+
+### Autonomous Robot Transport
+
+After the ROS 2 Jazzy + Gazebo setup above, install the navigation dependencies:
+
+```bash
+sudo apt install -y ros-jazzy-navigation2 ros-jazzy-nav2-bringup \
+  ros-jazzy-nav2-regulated-pure-pursuit-controller ros-jazzy-nav2-smac-planner \
+  ros-jazzy-robot-state-publisher ros-jazzy-xacro ros-jazzy-tf2-tools
+source /opt/ros/jazzy/setup.bash
+TRANSPORT_MODE=amr VISION_SOURCE=gazebo bash run_ubuntu.sh
+```
+
+Run from the repository root. The launcher builds the ROS packages, generates
+the expanded factory world/maps, and starts the backend, camera, robot and Nav2
+from one terminal. Open `http://127.0.0.1:8000`, add a product and press Start.
+Stop everything with `Ctrl+C` before switching modes or restarting.
+
+- A central aisle gives both drills direct access to Quality.
+- Smac planning and Regulated Pure Pursuit provide collision-aware navigation;
+  the robot stops at a destination before the supervisor starts processing.
+- The browser shows confirmed station deliveries and transport status, not a
+  second robot navigation simulation.
+- Payload loading is logical. Failed or cancelled transports require Reset;
+  the system never silently substitutes successful simulated delivery.
+
+For configuration, RViz, task/status topics and troubleshooting, see
+[AMR Navigation](docs/AMR_NAVIGATION.md).
 
 ### Manual Python Setup
 
@@ -360,6 +405,24 @@ python -m ruff format --check .
 See [camera requirements audit](docs/VISION_ACCEPTANCE_AUDIT.md) for verification
 results, known limitations, and the remaining live demo checks.
 
+Latest local verification (September 21, 2026): **183 Python tests passed on
+Windows and Ubuntu**, with Ruff lint/format checks passing. Six actual Gazebo
+navigation goals completed in 8.5-11.6 seconds each without full spins. A normal
+red product completed the real-camera AMR production cycle in 54 seconds, excluding
+startup. These are measured samples, not timing or reliability guarantees.
+See [AMR verification](docs/AMR_VERIFICATION.md) for detailed results and limits.
+
+With the normal demo stopped, reproduce the isolated navigation and production
+checks from a sourced Ubuntu/WSL terminal:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+.venv-wsl/bin/python scripts/run_amr_smoke.py --navigation-only vision station_a quality station_b quality reject_output
+.venv-wsl/bin/python scripts/run_amr_smoke.py --factory-only
+```
+
+Each check uses a separate database/port and stops its test services afterward.
+
 GitHub Actions runs the same checks on every push and pull request.
 
 In a sourced ROS terminal, system pytest plugins may conflict with the project
@@ -387,7 +450,7 @@ vision/            OpenCV inspection
 analytics/         Metrics and report exports
 maintenance/       Machine health scoring
 gazebo_fallback/   Gazebo world and synchronization bridge
-ros2_ws/           ROS 2 package
+ros2_ws/           Factory ROS 2 integration and optional AMR/Nav2 package
 industrial/        Optional OPC UA server
 config/            Product, machine, fault and routing configuration
 tests/             Automated test suite
@@ -401,6 +464,8 @@ docs/              Technical documentation
 - [Machine vision](docs/VISION_SYSTEM.md)
 - [ROS 2 integration](docs/ROS2_INTEGRATION.md)
 - [Gazebo integration](docs/GAZEBO_FALLBACK.md)
+- [AMR navigation](docs/AMR_NAVIGATION.md)
+- [AMR verification and change inventory](docs/AMR_VERIFICATION.md)
 - [Database schema](docs/database_schema.md)
 - [Fault model](docs/fault_model.md)
 - [OPC UA](docs/OPC_UA.md)
@@ -414,6 +479,9 @@ docs/              Technical documentation
 - Synthetic vision mode uses generated inspection frames. Gazebo vision mode
   uses rendered simulator pixels, not a physical camera.
 - OPC UA is optional and runs as a separate process.
+- AMR mode supports one robot and logical payload attachment, not physical
+  grasping or fleet management. Live all-recipe/fault endurance testing remains
+  broader than the completed navigation and normal-product checks.
 
 ## License
 

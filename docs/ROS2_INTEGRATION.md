@@ -1,5 +1,14 @@
 # ROS 2 Integration
 
+## Optional AMR Package
+
+`reconfactory_amr` is separate from the existing factory bridge package. It adds
+`/reconfactory_amr_manager`, `/reconfactory/amr/task` and
+`/reconfactory/amr/status` (JSON `std_msgs/String`), plus the standard
+`/navigate_to_pose` action. Existing state, fault, logger and vision nodes are
+unchanged. Start it once through `TRANSPORT_MODE=amr bash run_ubuntu.sh`.
+See [AMR Navigation](AMR_NAVIGATION.md) for dependencies, launch and verification.
+
 The ROS 2 package is in:
 
 ```text

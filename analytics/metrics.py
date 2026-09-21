@@ -48,7 +48,9 @@ def summarize_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
 def run_recovery_comparison(product_count: int = 12) -> dict[str, Any]:
     """Compare fail-stop behavior against ReConFactory rerouting behavior."""
 
-    without_recovery = FactorySupervisor(enable_database=False)
+    without_recovery = FactorySupervisor(
+        enable_database=False, transport_mode="simulated", vision_source="synthetic"
+    )
     without_recovery.start()
     for _ in range(product_count):
         without_recovery.create_product("red_block")
@@ -59,7 +61,9 @@ def run_recovery_comparison(product_count: int = 12) -> dict[str, Any]:
     without_recovery.stop()
     no_recovery_snapshot = without_recovery.snapshot()
 
-    with_recovery = FactorySupervisor(enable_database=False)
+    with_recovery = FactorySupervisor(
+        enable_database=False, transport_mode="simulated", vision_source="synthetic"
+    )
     with_recovery.start()
     for _ in range(product_count):
         with_recovery.create_product("red_block")

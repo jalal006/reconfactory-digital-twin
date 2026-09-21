@@ -21,3 +21,10 @@ def test_recovery_comparison_reports_both_scenarios():
     assert result["without_recovery"]["scenario"] == "fail_stop"
     assert result["with_recovery"]["scenario"] == "automatic_rerouting"
     assert result["with_recovery"]["fault_count"] == 1
+
+
+def test_offline_experiment_does_not_wait_for_amr(monkeypatch):
+    monkeypatch.setenv("TRANSPORT_MODE", "amr")
+    monkeypatch.setenv("VISION_SOURCE", "gazebo")
+    result = run_recovery_comparison(product_count=3)
+    assert result["with_recovery"]["products_completed"] == 3

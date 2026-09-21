@@ -20,6 +20,69 @@ def load_sync_module():
     return module
 
 
+def test_amr_payload_follows_robot_without_conveyor_replay(tmp_path):
+    from scripts.generate_amr_map import prepare_world
+
+    sync = load_sync_module()
+    bridge = sync.GazeboSync(
+        backend_url="http://127.0.0.1:8000",
+        world="reconfactory_world",
+        interval=0.04,
+        dry_run=True,
+    )
+    world_path = tmp_path / "amr.world.sdf"
+    prepare_world().write(world_path)
+    bridge.amr_surfaces = sync.amr_station_surfaces(world_path)
+    product = {
+        "product_id": "P-AMR",
+        "product_type": "red_block",
+        "status": "in_transit",
+        "current_location": "input_queue",
+        "route": ["input_queue", "vision"],
+    }
+    state = {
+        "transport_mode": "amr",
+        "products": [product],
+        "transport": {
+            "active_task": {"product_id": "P-AMR", "phase": "pickup"},
+            "robot_pose": {"x": 1.0, "y": -1.0, "z": 0.16, "yaw": 0.0},
+        },
+    }
+    bridge.sync_product_targets(state)
+    name = bridge.product_model_name("P-AMR")
+    assert bridge.product_locations[name] == "input_queue"
+    assert not bridge.product_paths
+    state["transport"]["active_task"]["phase"] = "delivery"
+    bridge.sync_product_targets(state)
+    assert bridge.product_locations[name] == "amr_payload"
+    assert bridge.product_poses[name].x == 1.0
+    assert bridge.product_poses[name].z == pytest.approx(0.35)
+    bridge.advance_products()
+    assert bridge.product_locations[name] == "amr_payload"
+    state["transport"]["robot_pose"] = None
+    bridge.sync_product_targets(state)
+    assert bridge.product_poses[name].x == 1.0
+    state["transport"]["active_task"] = None
+    product["current_location"] = "vision"
+    bridge.sync_product_targets(state)
+    assert bridge.product_locations[name] == "vision"
+    assert bridge.product_poses[name].x == 2.0
+    assert bridge.product_poses[name].y == pytest.approx(1.8)
+    assert bridge.product_poses[name].z == pytest.approx(0.415)
+    state["products"] = []
+    bridge.sync_product_targets(state)
+    assert not bridge.spawned_products
+
+
+@pytest.mark.parametrize("kind", ["red_block", "blue_cylinder", "green_component"])
+def test_amr_cargo_does_not_include_a_second_robot(kind):
+    sync = load_sync_module()
+    root = sync.ET.fromstring(sync.amr_product_sdf("payload", kind, []))
+    visuals = root.findall("model/link/visual")
+    assert all(v.get("name") in {"cargo", "cargo_main", "cargo_lobe"} for v in visuals)
+    assert visuals
+
+
 @pytest.mark.parametrize("output", ["accepted_output", "reject_output"])
 def test_output_discards_stale_quality_movement_queue(output):
     sync = load_sync_module()

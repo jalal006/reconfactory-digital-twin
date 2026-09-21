@@ -1,5 +1,16 @@
 # Gazebo 3D Simulation
 
+## Optional AMR Mode
+
+`TRANSPORT_MODE=amr bash run_ubuntu.sh` reuses the machines and camera in an
+expanded, robot-accessible workcell layout. The launcher generates
+`data/amr/factory.world.sdf` with a 13 x 9 m floor, central transport aisle,
+relocated machine docks, collision footprints and matching static maps.
+Connecting belts are omitted only in this AMR copy; the original conveyor world
+is unchanged. Only the existing sync
+process positions products, following the robot during delivery instead of
+replaying conveyor hops. See [AMR Navigation](AMR_NAVIGATION.md).
+
 Gazebo is the selected open-source 3D simulation layer for this project.
 
 Files:

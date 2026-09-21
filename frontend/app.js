@@ -1082,11 +1082,11 @@ function updateProductTargets(state) {
   state.products.forEach((product, index) => {
     seen.add(product.product_id);
     let current = visualProducts.get(product.product_id);
-    const nextLocation = locationKey(product);
+    const nextLocation = state.transport_mode === "amr" ? product.current_location : locationKey(product);
     const rawGazeboLocation = gazeboLocations[product.product_id];
     const gazeboLocation = factoryLayout[rawGazeboLocation] ? rawGazeboLocation : null;
     const productDone = product.status === "completed" || product.status === "rejected";
-    const gazeboDriven = hasFreshGazeboVisuals || current?.gazeboDriven || state.gazebo_visuals?.source === "gazebo";
+    const gazeboDriven = state.transport_mode !== "amr" && (hasFreshGazeboVisuals || current?.gazeboDriven || state.gazebo_visuals?.source === "gazebo");
     let requestedLocation = nextLocation;
     if (gazeboDriven) {
       if (hasFreshGazeboVisuals && gazeboLocation) {
@@ -1537,6 +1537,12 @@ function render(state) {
   updateProductTargets(state);
   document.getElementById("tickValue").textContent = state.tick;
   document.getElementById("lastDecision").textContent = state.last_decision;
+  const transportState = document.getElementById("transportState");
+  transportState.hidden = state.transport_mode !== "amr";
+  const task = state.transport?.active_task;
+  transportState.textContent = task
+    ? `AMR: ${task.product_id} | ${task.origin} -> ${task.destination} | ${task.status} (${task.phase})${task.failure_reason ? ": " + task.failure_reason : ""}`
+    : state.transport?.ready ? "AMR ready" : "AMR waiting for Nav2 / localization";
   const runState = document.getElementById("runState");
   runState.textContent = state.running ? "Running" : "Paused";
   runState.classList.toggle("running", state.running);
