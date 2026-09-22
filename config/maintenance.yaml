@@ -1,0 +1,9 @@
+maintenance:
+  mode: rules
+  model_path: models/machine_health_iforest.joblib
+  health_scheduling:
+    enabled: false
+    watch_penalty: 2.0
+    degrading_penalty: 12.0
+    critical_penalty: 30.0
+    critical_exclusion: true

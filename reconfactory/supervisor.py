@@ -9,12 +9,15 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from maintenance.health import SensorPoint
+from maintenance.monitor import HealthMonitor
 from vision.inspector import VisionInspector
 
 from .amr_transport import FactoryTransport
 from .config import (
     load_fault_rules,
     load_machine_configs,
+    load_maintenance_config,
     load_product_recipes,
     load_routing_weights,
 )
@@ -63,6 +66,9 @@ class FactorySupervisor:
         vision_source: str | None = None,
         vision_timeout_ticks: int = 5,
         transport_mode: str | None = None,
+        maintenance_mode: str | None = None,
+        health_scheduling: bool | None = None,
+        health_model_path: str | Path | None = None,
     ) -> None:
         self.config_dir = Path(config_dir)
         self.recipes = load_product_recipes(self.config_dir)
@@ -75,7 +81,31 @@ class FactorySupervisor:
             machine_id: StationController(config)
             for machine_id, config in self.machine_configs.items()
         }
-        self.scheduler = ProductionScheduler(self.stations, self.routing_weights)
+        maintenance_config = load_maintenance_config(self.config_dir)
+        self.maintenance_mode = (
+            maintenance_mode or os.getenv("MAINTENANCE_MODE") or maintenance_config["mode"]
+        )
+        configured_path = Path(
+            health_model_path
+            or os.getenv("HEALTH_MODEL_PATH")
+            or maintenance_config["model_path"]
+        )
+        self.health_model_path = (
+            configured_path
+            if configured_path.is_absolute()
+            else Path(__file__).resolve().parents[1] / configured_path
+        )
+        policy = maintenance_config["health_scheduling"]
+        if health_scheduling is not None:
+            policy["enabled"] = health_scheduling
+        elif "HEALTH_AWARE_SCHEDULING" in os.environ:
+            value = os.environ["HEALTH_AWARE_SCHEDULING"].lower()
+            if value not in {"0", "1", "true", "false"}:
+                raise ValueError("HEALTH_AWARE_SCHEDULING must be 0/1 or true/false")
+            policy["enabled"] = value in {"1", "true"}
+        self.health_monitor = HealthMonitor(self.maintenance_mode, self.health_model_path)
+        self.scheduler = ProductionScheduler(self.stations, self.routing_weights, policy)
+        self.predictive_diversions = 0
         self.fault_detector = FaultDetector(self.fault_rules)
         self.diagnosis_engine = DiagnosisEngine()
         self.reconfiguration_manager = ReconfigurationManager()
@@ -164,6 +194,9 @@ class FactorySupervisor:
             vision_source=self.vision_source,
             vision_timeout_ticks=self.vision_timeout_ticks,
             transport_mode=self.transport_mode,
+            maintenance_mode=self.maintenance_mode,
+            health_scheduling=self.scheduler.health_policy["enabled"],
+            health_model_path=self.health_model_path,
         )
         return self.snapshot()
 
@@ -207,6 +240,7 @@ class FactorySupervisor:
             if not self.running:
                 break
             self.tick_count += 1
+            self._update_machine_health()
             self._detect_faults()
             self._tick_stations()
             self._detect_faults()
@@ -421,6 +455,8 @@ class FactorySupervisor:
         return {
             "running": self.running,
             "transport_mode": self.transport_mode,
+            "maintenance_mode": self.maintenance_mode,
+            "health_scheduling_enabled": self.scheduler.health_policy["enabled"],
             "transport": self.transport.snapshot() if self.transport else None,
             "tick": self.tick_count,
             "simulation_speed": self.simulation_speed,
@@ -704,6 +740,7 @@ class FactorySupervisor:
                     "station": station.machine_id,
                 },
             )
+            self._record_predictive_assignment()
             return True
 
         compatible = self.scheduler.compatible_stations(process, "processing")
@@ -947,6 +984,57 @@ class FactorySupervisor:
             self.logger.log_event(event)
         return event
 
+    def _update_machine_health(self) -> None:
+        for station in self.stations.values():
+            sensors = station.sensors
+            prediction = self.health_monitor.observe(
+                SensorPoint(
+                    station.machine_id,
+                    sensors.temperature_c,
+                    sensors.vibration_mm_s,
+                    sensors.current_a,
+                    sensors.timestamp,
+                )
+            )
+            previous = station.health_prediction
+            station.health_prediction = prediction
+            if previous is None or (previous.status, previous.source) != (
+                prediction.status,
+                prediction.source,
+            ):
+                self._emit(
+                    "machine_health_changed",
+                    f"{station.config.name}: {prediction.status} ({prediction.source})",
+                    source=station.machine_id,
+                    data=prediction.to_dict(),
+                )
+
+    def apply_telemetry(
+        self, machine_id: str, temperature_c: float, vibration_mm_s: float, current_a: float
+    ) -> None:
+        """Set simulated measurements; the next tick samples them before assignment."""
+        from math import isfinite
+
+        if not all(isfinite(v) and v >= 0 for v in (temperature_c, vibration_mm_s, current_a)):
+            raise ValueError("Telemetry must be finite and nonnegative")
+        station = self._station(machine_id)
+        station.sensors.temperature_c = temperature_c
+        station.sensors.vibration_mm_s = vibration_mm_s
+        station.sensors.current_a = current_a
+        station.sensors.update_timestamp()
+
+    def _record_predictive_assignment(self) -> None:
+        decision = self.scheduler.last_health_decision
+        if decision:
+            self.predictive_diversions += 1
+            self._emit(
+                "predictive_reroute",
+                f"{decision['product_id']}: {decision['reason']}",
+                source="scheduler",
+                data=decision,
+            )
+            self.scheduler.last_health_decision = None
+
     def _persist_product(self, product: Product) -> None:
         if self.logger:
             self.logger.upsert_product(product)
@@ -1005,6 +1093,7 @@ class FactorySupervisor:
             "active_products": active,
             "fault_count": len(self.faults),
             "rerouted_products": self.rerouted_product_count,
+            "predictive_diversions": self.predictive_diversions,
             "completion_rate": completed / total if total else 0.0,
             "rejection_rate": rejected / total if total else 0.0,
             "machine_utilization": utilization,

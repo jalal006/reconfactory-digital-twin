@@ -2,11 +2,22 @@
 
 from __future__ import annotations
 
+import argparse
 import csv
+import sys
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from maintenance.health import HealthScorer
+from maintenance.telemetry import SCENARIOS, generate_sequence
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--seed", type=int, default=42)
+    args = parser.parse_args()
     output = Path("data/sample_sensor_data.csv")
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", newline="", encoding="utf-8") as file:
@@ -19,22 +30,28 @@ def main() -> None:
                 "vibration_mm_s",
                 "current_a",
                 "health_score",
+                "scenario",
             ],
         )
         writer.writeheader()
-        for tick in range(1, 401):
-            for machine_id in ["station_a", "station_b", "quality"]:
-                degradation = tick / 400
-                writer.writerow(
-                    {
-                        "tick": tick,
-                        "machine_id": machine_id,
-                        "temperature_c": round(34 + degradation * 18, 2),
-                        "vibration_mm_s": round(0.08 + degradation * 2.4, 3),
-                        "current_a": round(0.8 + degradation * 0.9, 2),
-                        "health_score": round(max(0, 1 - degradation * 0.65), 3),
-                    }
-                )
+        for scenario in SCENARIOS:
+            for index, machine_id in enumerate(["station_a", "station_b", "quality"]):
+                for tick, point in enumerate(
+                    generate_sequence(
+                        machine_id, seed=args.seed + index, samples=400, scenario=scenario
+                    )
+                ):
+                    writer.writerow(
+                        {
+                            "tick": tick,
+                            "machine_id": machine_id,
+                            "temperature_c": point.temperature_c,
+                            "vibration_mm_s": point.vibration_mm_s,
+                            "current_a": point.current_a,
+                            "health_score": HealthScorer().score(point),
+                            "scenario": scenario,
+                        }
+                    )
     print(f"Wrote {output}")
 
 

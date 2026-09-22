@@ -22,13 +22,22 @@ def main() -> None:
             backend_url = self.get_parameter("backend_url").value
             self.client = ReConFactoryClient(backend_url)
             self.publisher = self.create_publisher(String, "reconfactory/factory_state", 10)
+            self.health_publisher = self.create_publisher(
+                String, "reconfactory/machine_health", 10
+            )
             self.timer = self.create_timer(0.5, self.publish_state)
 
         def publish_state(self) -> None:
             message = String()
             try:
-                message.data = json.dumps(self.client.status())
+                snapshot = self.client.status()
+                message.data = json.dumps(snapshot)
                 self.publisher.publish(message)
+                health = String()
+                health.data = json.dumps(
+                    {"machines": [m.get("machine_health", {}) for m in snapshot["machines"]]}
+                )
+                self.health_publisher.publish(health)
             except Exception as exc:  # noqa: BLE001 - keep bridge alive during backend restarts.
                 self.get_logger().warning(f"Backend unavailable: {exc}")
 

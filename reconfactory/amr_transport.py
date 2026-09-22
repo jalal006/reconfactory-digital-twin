@@ -126,6 +126,8 @@ class FactoryTransport:
             product.assigned_station = None
             f._persist_product(product)
             self._event("transport_requested", request)
+            if outcome is None:
+                f._record_predictive_assignment()
             return
 
     def _dequeue(self, product_id: str) -> None:

@@ -594,3 +594,9 @@ button.secondary {
     grid-template-columns: 1fr;
   }
 }
+/* Maintenance risk is separate from hard machine faults. */
+.health-state { font-size: 0.85rem; font-weight: 600; overflow-wrap: anywhere; }
+.health-healthy { color: #15803d; }
+.health-watch { color: #a16207; }
+.health-degrading, .health-warning { color: #c2410c; }
+.health-critical { color: #b91c1c; }

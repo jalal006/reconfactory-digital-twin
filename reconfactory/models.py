@@ -205,6 +205,7 @@ class MachineStatus:
     health_score: float
     maintenance_status: str
     maintenance_recommendation: str
+    machine_health: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -225,6 +226,7 @@ class MachineStatus:
             "health_score": self.health_score,
             "maintenance_status": self.maintenance_status,
             "maintenance_recommendation": self.maintenance_recommendation,
+            "machine_health": dict(self.machine_health),
         }
 
 

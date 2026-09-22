@@ -1,5 +1,11 @@
 # Database Schema
 
+Predictive maintenance uses the existing schema: machine snapshot `data_json`
+contains `machine_health`; `machine_health_changed` and `predictive_reroute`
+events persist source, scores and routing reasons in event `data_json`.
+Maintenance warning rows are written on status transitions instead of every
+sample. Event CSV exports now include `data_json` for offline analysis.
+
 SQLite logging is implemented in `reconfactory.logger.DataLogger`.
 
 ## Tables

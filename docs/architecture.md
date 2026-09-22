@@ -1,5 +1,17 @@
 # Architecture
 
+## Predictive Health
+
+Machine telemetry is sampled once per supervisor tick into bounded per-machine
+histories. A shared rolling feature pipeline feeds the opt-in Isolation Forest;
+the rule baseline remains the default and the explicit warmup fallback.
+The scheduler applies configurable risk penalties only after capability and
+availability checks. The supervisor records changed assignments and health-state
+transitions using existing event persistence. Machine snapshot JSON feeds the
+dashboard, WebSocket and ROS health topic. ML imports are deferred so system-Python
+ROS camera nodes do not need backend scikit-learn/joblib packages.
+See [Predictive Maintenance](PREDICTIVE_MAINTENANCE.md).
+
 ReConFactory is organized around a single top-level `FactorySupervisor`. The supervisor owns station controllers, product tracking, scheduling, fault detection, diagnosis, recovery, and persistence.
 
 ## Runtime Flow

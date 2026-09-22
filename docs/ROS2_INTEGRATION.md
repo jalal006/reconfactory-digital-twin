@@ -1,5 +1,19 @@
 # ROS 2 Integration
 
+## Machine Health
+
+The existing supervisor bridge also publishes `/reconfactory/machine_health`
+as `std_msgs/msg/String` JSON with a `machines` array at 2 Hz. Each entry contains
+machine ID, health/anomaly scores, status, source and reasons from the backend.
+Inference stays in Python maintenance code, not ROS nodes. Full factory-state
+messages include the same `machine_health` fields.
+
+```bash
+ros2 topic echo /reconfactory/machine_health
+```
+
+See [Predictive Maintenance](PREDICTIVE_MAINTENANCE.md) for training and modes.
+
 ## Optional AMR Package
 
 `reconfactory_amr` is separate from the existing factory bridge package. It adds

@@ -30,6 +30,7 @@ class StationController:
         self.utilization_ticks = 0
         self.unavailable_reason: str | None = None
         self.health_scorer = HealthScorer()
+        self.health_prediction = None
 
     @property
     def machine_id(self) -> str:
@@ -194,7 +195,25 @@ class StationController:
             cycle_count=self.cycle_count,
             downtime_ticks=self.downtime_ticks,
             utilization_ticks=self.utilization_ticks,
-            health_score=maintenance.health_score,
-            maintenance_status=maintenance.status,
-            maintenance_recommendation=maintenance.recommendation,
+            health_score=self.health_prediction.health_score
+            if self.health_prediction
+            else maintenance.health_score,
+            maintenance_status=self.health_prediction.status
+            if self.health_prediction
+            else maintenance.status,
+            maintenance_recommendation=self.health_prediction.recommendation
+            if self.health_prediction
+            else maintenance.recommendation,
+            machine_health=self.health_prediction.to_dict()
+            if self.health_prediction
+            else {
+                "machine_id": self.machine_id,
+                "health_score": maintenance.health_score,
+                "anomaly_score": round(1 - maintenance.health_score, 3),
+                "status": maintenance.status,
+                "source": "rules",
+                "reasons": maintenance.reasons,
+                "recommendation": maintenance.recommendation,
+                "sample_count": 0,
+            },
         )

@@ -30,6 +30,8 @@ logs/
 *.log
 *.db
 *.db-*
+models/*.joblib
+models/*.json
 
 # ROS 2 / colcon
 ros2_ws/build/

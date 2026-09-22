@@ -17,10 +17,18 @@ def export_event_report(
     with sqlite3.connect(db) as conn, output.open("w", newline="", encoding="utf-8") as file:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            "SELECT timestamp, event_type, severity, source, message FROM events ORDER BY timestamp"
+            "SELECT timestamp, event_type, severity, source, message, data_json FROM events ORDER BY timestamp"
         ).fetchall()
         writer = csv.DictWriter(
-            file, fieldnames=["timestamp", "event_type", "severity", "source", "message"]
+            file,
+            fieldnames=[
+                "timestamp",
+                "event_type",
+                "severity",
+                "source",
+                "message",
+                "data_json",
+            ],
         )
         writer.writeheader()
         writer.writerows(dict(row) for row in rows)

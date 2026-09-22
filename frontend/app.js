@@ -1393,7 +1393,9 @@ function renderMachines(state) {
       return `<div class="row machine-row machine-${classToken(machine.state)}">
         <div class="row-title"><span>${escapeHtml(machine.name)}</span>${badge(machine.state)}</div>
         <div class="muted">${escapeHtml(capabilities)}</div>
-        <div class="muted">Temp ${temp} C | Health ${(machine.health_score * 100).toFixed(0)}% ${machine.maintenance_status}</div>
+        <div class="muted">Temp ${temp} C | Health ${(machine.health_score * 100).toFixed(0)}%</div>
+        <div class="health-state health-${classToken(machine.maintenance_status)}">${escapeHtml(machine.maintenance_status.toUpperCase())} | Anomaly ${((machine.machine_health?.anomaly_score ?? (1 - machine.health_score)) * 100).toFixed(0)}%</div>
+        <div class="muted" title="${escapeHtml((machine.machine_health?.reasons || []).join('; '))}">${escapeHtml(machine.machine_health?.source || 'rules')}</div>
         <div class="muted">Queue ${machine.queue_length || 0} | Product ${machine.current_product_id || "none"}</div>
         ${fault ? `<div class="machine-alert">Fault: ${escapeHtml(displayLabel(fault.fault_type))} | ${escapeHtml(fault.recommendation)}</div>` : '<div class="muted">Fault none</div>'}
       </div>`;

@@ -154,3 +154,29 @@ def load_fault_rules(config_dir: str | Path = "config") -> dict[str, Any]:
 def load_routing_weights(config_dir: str | Path = "config") -> dict[str, float]:
     data = _safe_load_yaml(Path(config_dir) / "routing_weights.yaml")
     return {**DEFAULT_ROUTING_WEIGHTS, **data.get("routing_weights", {})}
+
+
+def load_maintenance_config(config_dir: str | Path = "config") -> dict[str, Any]:
+    data = _safe_load_yaml(Path(config_dir) / "maintenance.yaml").get("maintenance", {})
+    policy = {
+        "enabled": False,
+        "watch_penalty": 2.0,
+        "degrading_penalty": 12.0,
+        "critical_penalty": 30.0,
+        "critical_exclusion": True,
+        **data.get("health_scheduling", {}),
+    }
+    import math
+
+    for key in ("watch_penalty", "degrading_penalty", "critical_penalty"):
+        if not math.isfinite(float(policy[key])) or float(policy[key]) < 0:
+            raise ValueError(f"Invalid maintenance scheduling penalty: {key}")
+    for key in ("enabled", "critical_exclusion"):
+        if not isinstance(policy[key], bool):
+            raise ValueError(f"Maintenance {key} must be boolean")
+    return {
+        "mode": "rules",
+        "model_path": "models/machine_health_iforest.joblib",
+        **data,
+        "health_scheduling": policy,
+    }

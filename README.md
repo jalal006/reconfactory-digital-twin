@@ -8,7 +8,8 @@
 
 A fault-aware smart factory digital twin with Gazebo camera perception,
 ROS 2 / OpenCV inspection, optional Nav2 autonomous robot transport, an animated
-browser dashboard, automatic rerouting and recovery, and SQLite analytics.
+browser dashboard, ML-based predictive maintenance, automatic rerouting and
+recovery, and SQLite analytics.
 
 An optional **single-AMR transport mode** adds a differential-drive Gazebo robot,
 LiDAR, AMCL localization and Nav2 delivery tasks. The supervisor waits for actual
@@ -41,6 +42,7 @@ drill-to-quality access; the original conveyor layout remains the default.
 | Processing | Two capability-based processing stations |
 | Machine vision | Gazebo camera color inspection; synthetic color, shape and missing-section inspection |
 | Resilience | Fault detection, diagnosis, recovery and automatic rerouting |
+| Predictive maintenance | Isolation Forest telemetry scoring and health-aware processing assignments |
 | Visualization | Animated browser dashboard and synchronized Gazebo scene |
 | Data | SQLite events, products, machine snapshots, sensors and faults |
 | Analytics | Throughput, cycle time, utilization, downtime and recovery metrics |
@@ -69,6 +71,10 @@ flowchart LR
     SUP --> VIS[OpenCV Inspection]
     SUP --> SCH[Scheduler + Recovery]
     SUP --> DB[(SQLite)]
+    SUP --> TELEMETRY[Machine Telemetry]
+    TELEMETRY --> HEALTH[Rolling Features + Isolation Forest]
+    HEALTH -->|Health Risk| SCH
+    HEALTH -->|Scores and Source| API
     API <--> ROS[ROS 2 Bridge]
     API <--> GZ[Gazebo Sync]
     GZ --> CAM[Gazebo RGB Camera]
@@ -292,6 +298,46 @@ tail -80 logs/gazebo.log
 tail -80 logs/gazebo_sync.log
 ```
 
+## Predictive Maintenance
+
+An optional Isolation Forest estimates machine health from 12-sample temperature,
+vibration and current windows. The scheduler adds a health-risk penalty when choosing
+compatible processing stations; critical machines can be excluded from new work.
+Existing jobs, hard-fault recovery and the rule-based `HealthScorer` remain intact.
+Dashboard cards and ROS expose the estimator source and normalized anomaly score,
+not a claimed fault probability.
+
+```bash
+source .venv-wsl/bin/activate
+python -m pip install -r requirements.txt
+python scripts/train_health_model.py
+python scripts/run_experiment.py --maintenance --seed 42 --ticks 180
+MAINTENANCE_MODE=ml HEALTH_AWARE_SCHEDULING=1 bash run_ubuntu.sh
+```
+
+Measured seed-42 synthetic trial (180 ticks, identical workload and degradation):
+
+| Metric | Baseline | Health-Aware |
+|---|---:|---:|
+| Completed products | 23 | 23 |
+| Hard faults / downtime ticks | 1 / 20 | 1 / 20 |
+| Throughput, products/tick | 0.12778 | 0.12778 |
+| Average cycle time, ticks | 7.39 | 7.83 |
+| Predictive diversions | 0 | 18 |
+| Mean anomaly at assignment | 0.43594 | 0.00494 |
+
+Health-aware scheduling used lower-risk machines, with slightly slower cycles;
+it did **not** reduce the exogenously imposed fault or improve throughput.
+Held-out synthetic evaluation detected 88.85% of degraded windows with 0.46%
+healthy false positives. See [Predictive Maintenance](docs/PREDICTIVE_MAINTENANCE.md)
+for setup, model/security limitations, API/ROS topics and a live demo, and
+[measured evaluation](docs/MAINTENANCE_VERIFICATION.md) for definitions.
+
+ML is opt-in; rules and normal scheduling remain the defaults. Train the local
+artifact before enabling ML. It is intentionally not committed to Git.
+September 22 verification: **213 tests pass on Windows and Ubuntu**, Ruff passes,
+and a real Gazebo camera + AMR cycle completed with ML scheduling enabled.
+
 ## Machine Vision
 
 The vision system supports two modes:
@@ -405,7 +451,7 @@ python -m ruff format --check .
 See [camera requirements audit](docs/VISION_ACCEPTANCE_AUDIT.md) for verification
 results, known limitations, and the remaining live demo checks.
 
-Latest local verification (September 21, 2026): **183 Python tests passed on
+Navigation verification (September 21, 2026): **183 Python tests passed on
 Windows and Ubuntu**, with Ruff lint/format checks passing. Six actual Gazebo
 navigation goals completed in 8.5-11.6 seconds each without full spins. A normal
 red product completed the real-camera AMR production cycle in 54 seconds, excluding
@@ -448,7 +494,7 @@ frontend/          Browser dashboard
 reconfactory/      Automation, scheduling, faults, recovery and persistence
 vision/            OpenCV inspection
 analytics/         Metrics and report exports
-maintenance/       Machine health scoring
+maintenance/       Rule baseline, rolling telemetry features and Isolation Forest
 gazebo_fallback/   Gazebo world and synchronization bridge
 ros2_ws/           Factory ROS 2 integration and optional AMR/Nav2 package
 industrial/        Optional OPC UA server
@@ -462,6 +508,8 @@ docs/              Technical documentation
 - [Architecture](docs/architecture.md)
 - [API](docs/api.md)
 - [Machine vision](docs/VISION_SYSTEM.md)
+- [Predictive maintenance](docs/PREDICTIVE_MAINTENANCE.md)
+- [Maintenance evaluation and A/B results](docs/MAINTENANCE_VERIFICATION.md)
 - [ROS 2 integration](docs/ROS2_INTEGRATION.md)
 - [Gazebo integration](docs/GAZEBO_FALLBACK.md)
 - [AMR navigation](docs/AMR_NAVIGATION.md)

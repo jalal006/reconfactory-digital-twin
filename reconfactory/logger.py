@@ -17,6 +17,7 @@ class DataLogger:
         if reset and self.db_path.exists():
             self.db_path.unlink()
         self._init_schema()
+        self._maintenance_states: dict[str, str] = {}
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -240,7 +241,14 @@ class DataLogger:
                     1 if data["sensors"]["camera_ok"] else 0,
                 ),
             )
-            if data["maintenance_status"] in {"warning", "critical"}:
+            previous = self._maintenance_states.get(data["machine_id"])
+            self._maintenance_states[data["machine_id"]] = data["maintenance_status"]
+            if previous != data["maintenance_status"] and data["maintenance_status"] in {
+                "watch",
+                "warning",
+                "degrading",
+                "critical",
+            }:
                 conn.execute(
                     """
                     INSERT INTO maintenance_warnings

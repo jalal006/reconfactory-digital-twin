@@ -45,6 +45,27 @@ Do not describe logical payload placement as physical grasping.
 
 ## Demo 6: Predictive Maintenance
 
-1. Run `python scripts/generate_sensor_data.py`.
-2. Run `python scripts/run_experiment.py`.
-3. Show health score and maintenance status in the dashboard.
+From the repository root in an activated Ubuntu project environment:
+
+```bash
+python scripts/train_health_model.py
+MAINTENANCE_MODE=ml HEALTH_AWARE_SCHEDULING=1 python scripts/run_factory.py
+```
+
+1. Open the dashboard, press Start and wait for the 12-sample warmup.
+2. Confirm machine cards show `ml_isolation_forest`, then add red blocks.
+3. In another activated terminal, run
+   `python scripts/demo_machine_health.py --machine station_a --scenario bearing`.
+4. Show A's increasing anomaly score and a `predictive_reroute` event choosing B
+   for new compatible work before a hard fault. Existing work stays assigned.
+5. Reset afterward: late degradation samples can trigger a real simulated fault.
+
+For the reproducible comparison, run
+`python scripts/run_experiment.py --maintenance --seed 42 --ticks 180`.
+The measured trial completes 23 products in both modes, with 18 predictive
+diversions and lower anomaly at assignment, but slightly longer cycle times.
+Do not describe this as increased throughput or prevention of the imposed fault.
+
+For a 45-60 second recording, show the score/source, changed assignment and
+comparison table. See [Predictive Maintenance](PREDICTIVE_MAINTENANCE.md) and
+[measured results](MAINTENANCE_VERIFICATION.md).

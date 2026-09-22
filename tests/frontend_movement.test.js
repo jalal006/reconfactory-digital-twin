@@ -107,17 +107,26 @@ function runFrontendMovementTests(source) {
     assert(visual.location === "vision" && !visual.route, "Cancelled AMR load must not jump to recovery buffer");
   `;
   const clock = { now: 0 };
+  const elements = {};
   const document = {
-    getElementById: () => ({ addEventListener() {} }),
+    getElementById: (id) => elements[id] ||= { addEventListener() {} },
     querySelectorAll: () => [],
   };
   const run = new Function(
     "document", "window", "fetch", "requestAnimationFrame", "performance", "clock",
-    source + "\n" + checks + "\n" + amrChecks,
+    source + "\n" + checks + "\n" + amrChecks + `
+      renderMachines({machines: [{ name: "Processing A", state: "idle", capabilities: ["drill"],
+        sensors: {temperature_c: 40}, health_score: .38, maintenance_status: "degrading",
+        machine_health: {anomaly_score: .62, source: "ml_isolation_forest", reasons: ["<unsafe>"]} }]});
+      const html = document.getElementById("machineList").innerHTML;
+      assert(html.includes("Anomaly 62%") && html.includes("Health 38%"), "Health card must show both scores");
+      assert(html.includes("health-degrading") && html.includes("ml_isolation_forest"), "Risk/source must be visible");
+      assert(!html.includes("<unsafe>"), "Health reasons must be escaped");
+    `,
   );
   run(document, { addEventListener() {} }, () => new Promise(() => {}), () => 1,
     { now: () => clock.now }, clock);
-  return "9 browser movement scenarios passed";
+  return "9 browser movement scenarios and 1 health-card scenario passed";
 }
 
 if (typeof require === "function") {

@@ -21,6 +21,18 @@ POST /api/start
 POST /api/stop
 ```
 
+## Maintenance
+
+`GET /api/maintenance` returns `mode`, `scheduling_enabled` and `machines` health
+predictions. `/api/status` and WebSocket snapshots include each machine's
+`machine_health`, plus `stats.predictive_diversions`.
+
+`POST /api/telemetry` accepts simulated `machine_id`, `temperature_c`,
+`vibration_mm_s` and `current_a`. Numeric values must be finite and nonnegative;
+an unknown machine returns 404. The next running tick samples the values before
+assignment. This local demo endpoint is not a hardware or authenticated public
+telemetry gateway. See [Predictive Maintenance](PREDICTIVE_MAINTENANCE.md).
+
 ## AMR Transport
 
 With `TRANSPORT_MODE=amr`, the supervisor remains the production authority.

@@ -38,6 +38,13 @@ class RecoverRequest(BaseModel):
     machine_id: str
 
 
+class TelemetryRequest(BaseModel):
+    machine_id: str
+    temperature_c: float = Field(ge=0, allow_inf_nan=False)
+    vibration_mm_s: float = Field(ge=0, allow_inf_nan=False)
+    current_a: float = Field(ge=0, allow_inf_nan=False)
+
+
 class TickRequest(BaseModel):
     steps: int = Field(default=1, ge=1, le=100)
 
@@ -146,6 +153,24 @@ async def status() -> dict[str, Any]:
 @app.get("/api/integrations")
 async def integrations() -> dict[str, Any]:
     return await asyncio.to_thread(check_integrations)
+
+
+@app.get("/api/maintenance")
+async def maintenance_state() -> dict[str, Any]:
+    return {
+        "mode": supervisor.maintenance_mode,
+        "scheduling_enabled": supervisor.scheduler.health_policy["enabled"],
+        "machines": [s.status().machine_health for s in supervisor.stations.values()],
+    }
+
+
+@app.post("/api/telemetry")
+async def telemetry(payload: TelemetryRequest) -> dict[str, bool]:
+    try:
+        supervisor.apply_telemetry(**payload.model_dump())
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"ok": True}
 
 
 @app.get("/api/transport")
