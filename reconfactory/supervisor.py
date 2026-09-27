@@ -845,7 +845,7 @@ class FactorySupervisor:
                 self.transport.active
                 and self.transport.active.destination == station.machine_id
             ):
-                self.transport.cancel()
+                self.transport.invalidate_destination(station.machine_id, fault.fault_id)
             if station.config.machine_type == "conveyor":
                 self.transport.cancel()
                 self.paused_by_fault = self.running

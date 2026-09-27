@@ -1534,17 +1534,23 @@ async function runExperiment() {
   renderExperiment(await response.json());
 }
 
-function render(state) {
-  latestState = state;
-  updateProductTargets(state);
-  document.getElementById("tickValue").textContent = state.tick;
-  document.getElementById("lastDecision").textContent = state.last_decision;
+function renderTransport(state) {
   const transportState = document.getElementById("transportState");
   transportState.hidden = state.transport_mode !== "amr";
   const task = state.transport?.active_task;
   transportState.textContent = task
     ? `AMR: ${task.product_id} | ${task.origin} -> ${task.destination} | ${task.status} (${task.phase})${task.failure_reason ? ": " + task.failure_reason : ""}`
     : state.transport?.ready ? "AMR ready" : "AMR waiting for Nav2 / localization";
+  if (task?.replan_state) transportState.textContent += ` | ${task.replan_state.replaceAll("_", " ")}`;
+  if (task?.supersedes_task_id) transportState.textContent += ` | Replanned: ${task.original_destination} -> ${task.destination} | ${task.payload_loaded ? "Payload on AMR" : "Pickup required"}`;
+}
+
+function render(state) {
+  latestState = state;
+  updateProductTargets(state);
+  document.getElementById("tickValue").textContent = state.tick;
+  document.getElementById("lastDecision").textContent = state.last_decision;
+  renderTransport(state);
   const runState = document.getElementById("runState");
   runState.textContent = state.running ? "Running" : "Paused";
   runState.classList.toggle("running", state.running);

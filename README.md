@@ -8,8 +8,8 @@
 
 A fault-aware smart factory digital twin with Gazebo camera perception,
 ROS 2 / OpenCV inspection, optional Nav2 autonomous robot transport, an animated
-browser dashboard, ML-based predictive maintenance, automatic rerouting and
-recovery, and SQLite analytics.
+browser dashboard, ML-based predictive maintenance, fault-aware in-flight AMR
+replanning, and SQLite analytics.
 
 An optional **single-AMR transport mode** adds a differential-drive Gazebo robot,
 LiDAR, AMCL localization and Nav2 delivery tasks. The supervisor waits for actual
@@ -41,7 +41,7 @@ drill-to-quality access; the original conveyor layout remains the default.
 | Factory automation | Product recipes, queues, machine states, scheduling and quality control |
 | Processing | Two capability-based processing stations |
 | Machine vision | Gazebo camera color inspection; synthetic color, shape and missing-section inspection |
-| Resilience | Fault detection, diagnosis, recovery and automatic rerouting |
+| Resilience | Fault diagnosis, recovery and in-flight AMR mission replanning with retained payload |
 | Predictive maintenance | Isolation Forest telemetry scoring and health-aware processing assignments |
 | Visualization | Animated browser dashboard and synchronized Gazebo scene |
 | Data | SQLite events, products, machine snapshots, sensors and faults |
@@ -88,12 +88,21 @@ flowchart LR
     ROBOT --> SENS[LiDAR + Odometry]
     SENS --> NAV
     AMR -->|Delivery Status| SUP
+    SUP -->|Hard Destination Fault: Cancel| AMR
+    AMR -->|Cancellation Confirmed + Robot Stopped| SUP
+    SCH -->|Compatible Replacement| TASK
     API --> OPC[Optional OPC UA]
 ```
 
 The Python supervisor is the source of truth for product state, scheduling,
 fault handling and persistence. Browser, Gazebo and ROS 2 integrations consume
 the same backend state.
+
+The cancellation arrows are a handshake, not a second scheduler: the supervisor
+invalidates a faulted destination, the manager ends the old Nav2 action and confirms
+a stop, and only then does the supervisor authorize a scheduler-selected replacement.
+Loaded replacements navigate from the current robot pose without returning to pickup.
+Health scores influence station choice but do not repeatedly cancel active missions.
 
 ## Install And Run
 
@@ -218,11 +227,20 @@ Stop everything with `Ctrl+C` before switching modes or restarting.
   the robot stops at a destination before the supervisor starts processing.
 - The browser shows confirmed station deliveries and transport status, not a
   second robot navigation simulation.
-- Payload loading is logical. Failed or cancelled transports require Reset;
-  the system never silently substitutes successful simulated delivery.
+- Hard destination faults cancel the old mission, wait for Nav2 completion and
+  stopped odometry, then replan to a compatible station with the payload retained.
+  No alternative leaves the loaded robot waiting safely. Other failures require
+  operator recovery; delivery is never invented.
 
 For configuration, RViz, task/status topics and troubleshooting, see
 [AMR Navigation](docs/AMR_NAVIGATION.md).
+See [fault-aware mission replanning](docs/FAULT_AWARE_REPLANNING.md) for the
+cancellation handshake, linked tasks, reproducible experiment and live demo.
+
+To demonstrate it, add a normal red block and inject Processing A Overheat while
+the loaded AMR travels from Vision toward A. The robot cancels, retains its load,
+and delivers to compatible Processing B. If neither drill is available, it holds
+the load until a suitable station recovers. Only confirmed delivery starts processing.
 
 ### Manual Python Setup
 
@@ -442,6 +460,15 @@ See [ROS 2 integration](docs/ROS2_INTEGRATION.md) for command examples.
 
 ## Tests
 
+Latest verification (September 27, 2026): **241 Python tests passed in WSL**, Ruff
+lint/format passed, and the browser harness passed nine movement, one health-card
+and two replanning-banner scenarios. The preceding 238-test suite also passed on
+Windows. Two live fault-during-delivery runs completed through real Gazebo camera
+inspection, cancellation and delivery to B; fault-to-B delivery took 11.12-11.32 s.
+Live backend-outage and manager-restart checks held the payload without false
+delivery. The maintainer also reported passing the manual Gazebo/RViz and recovery
+checklist. These samples are not safety or performance guarantees.
+
 ```bash
 python -m pytest
 python -m ruff check .
@@ -468,6 +495,20 @@ source /opt/ros/jazzy/setup.bash
 ```
 
 Each check uses a separate database/port and stops its test services afterward.
+
+Replanning and resilience checks, also with the normal stack stopped:
+
+```bash
+.venv-wsl/bin/python scripts/run_amr_smoke.py --fault-replan
+.venv-wsl/bin/python scripts/run_amr_smoke.py --resilience backend-outage
+.venv-wsl/bin/python scripts/run_amr_smoke.py --resilience manager-restart
+.venv-wsl/bin/python scripts/run_replanning_experiment.py
+```
+
+The paired experiment compares the previous static cancel-and-hold policy with
+replanning under identical logical fault timing: zero versus one completed product.
+Its scripted ticks are **not** measured robot travel time. Detailed observations,
+remaining limits and result paths are in [Fault-Aware Replanning](docs/FAULT_AWARE_REPLANNING.md).
 
 GitHub Actions runs the same checks on every push and pull request.
 
@@ -513,6 +554,7 @@ docs/              Technical documentation
 - [ROS 2 integration](docs/ROS2_INTEGRATION.md)
 - [Gazebo integration](docs/GAZEBO_FALLBACK.md)
 - [AMR navigation](docs/AMR_NAVIGATION.md)
+- [Fault-aware replanning, resilience tests and measured results](docs/FAULT_AWARE_REPLANNING.md)
 - [AMR verification and change inventory](docs/AMR_VERIFICATION.md)
 - [Database schema](docs/database_schema.md)
 - [Fault model](docs/fault_model.md)
@@ -530,6 +572,9 @@ docs/              Technical documentation
 - AMR mode supports one robot and logical payload attachment, not physical
   grasping or fleet management. Live all-recipe/fault endurance testing remains
   broader than the completed navigation and normal-product checks.
+- Manager-crash stop confirmation took 4.29-5.87 s in two tests; this is not an
+  independent emergency-stop watchdog. Uncertain navigation requires inspection
+  and stack restart. Missions are not restored after loss of backend state.
 
 ## License
 

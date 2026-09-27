@@ -6,6 +6,7 @@ import json
 import math
 import os
 import sys
+import time
 from collections import deque
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -14,7 +15,9 @@ from urllib.request import Request, urlopen
 def main(args=None):
     import rclpy
     from action_msgs.msg import GoalStatus  # noqa: F401
+    from action_msgs.srv import CancelGoal
     from nav2_msgs.action import NavigateToPose
+    from nav_msgs.msg import Odometry
     from rclpy.action import ActionClient
     from rclpy.node import Node
     from rclpy.time import Time
@@ -40,11 +43,42 @@ def main(args=None):
             self.publisher = self.create_publisher(String, "/reconfactory/amr/status", 10)
             self.tasks = self.create_publisher(String, "/reconfactory/amr/task", 10)
             self.client = ActionClient(self, NavigateToPose, "navigate_to_pose")
-            self.runner = NavigationRunner(self.stations, self.client, self.goal, self.report)
+            self.cancel_orphan = self.create_client(
+                CancelGoal, "/navigate_to_pose/_action/cancel_goal"
+            )
+            self.orphan_cancel_sent = False
+            self.orphan_detected = False
+            self.session_started = False
+            self.stopped_since = None
+            self.odom_at = 0.0
+            self.runner = NavigationRunner(
+                self.stations, self.client, self.goal, self.report, stopped=self.stopped
+            )
+            self.create_subscription(Odometry, "/odom", self.odometry, 10)
             self.create_subscription(String, "/reconfactory/amr/task", self.receive, 10)
             self.tf = Buffer()
             self.listener = TransformListener(self.tf, self)
             self.create_timer(0.25, self.poll)
+
+        def odometry(self, msg):
+            self.odom_at = time.monotonic()
+            velocity = msg.twist.twist
+            if (
+                math.hypot(velocity.linear.x, velocity.linear.y) < 0.03
+                and abs(velocity.angular.z) < 0.05
+            ):
+                if self.stopped_since is None:
+                    self.stopped_since = self.odom_at
+            else:
+                self.stopped_since = None
+
+        def stopped(self):
+            now = time.monotonic()
+            return (
+                self.stopped_since is not None
+                and now - self.odom_at < 0.5
+                and now - self.stopped_since >= 0.3
+            )
 
         def goal(self, pose):
             goal = NavigateToPose.Goal()
@@ -85,7 +119,14 @@ def main(args=None):
                         raise ValueError("Transport is paused or cancelled")
                     if any(
                         active.get(k) != payload.get(k)
-                        for k in ("task_id", "product_id", "origin", "destination")
+                        for k in (
+                            "task_id",
+                            "product_id",
+                            "origin",
+                            "destination",
+                            "payload_loaded",
+                            "supersedes_task_id",
+                        )
                     ):
                         raise ValueError("Task does not match supervisor authorization")
                 self.runner.submit(payload)
@@ -113,19 +154,52 @@ def main(args=None):
 
         def poll(self):
             self.runner.watchdog()
+            if (
+                self.orphan_detected
+                and not self.orphan_cancel_sent
+                and self.cancel_orphan.service_is_ready()
+            ):
+                self.cancel_orphan.call_async(CancelGoal.Request())
+                self.orphan_cancel_sent = True
             if not self.backend:
                 return
             try:
                 state = self.http("/api/transport")
                 active = state.get("active_task") or {}
+                if not self.session_started:
+                    self.session_started = True
+                    if active and active.get("status") not in {
+                        "delivered",
+                        "cancelled",
+                        "failed",
+                    }:
+                        self.runner.uncertain = True
+                        self.orphan_detected = True
                 task = self.runner.task
+                if (
+                    task
+                    and active.get("task_id") == task.task_id
+                    and active.get("cancel_requested")
+                ):
+                    for key in (
+                        "replan_reason",
+                        "fault_id",
+                        "original_destination",
+                        "replan_state",
+                    ):
+                        setattr(task, key, active.get(key))
                 if task and (
                     not state.get("running")
                     or active.get("task_id") != task.task_id
                     or active.get("cancel_requested")
                     or active.get("status") in {"failed", "cancelled"}
                 ):
-                    self.runner.cancel()
+                    self.runner.cancel(
+                        invalidate_delivery=(
+                            active.get("task_id") == task.task_id
+                            and active.get("cancel_requested", False)
+                        )
+                    )
                 # Preserve event order across temporary HTTP failures.
                 while self.outbox:
                     try:
@@ -142,7 +216,8 @@ def main(args=None):
                     {
                         "ready": self.client.server_is_ready()
                         and pose is not None
-                        and not busy,
+                        and not busy
+                        and not self.runner.uncertain,
                         "robot_pose": pose,
                     },
                 )
@@ -150,6 +225,7 @@ def main(args=None):
                     active.get("status") == "requested"
                     and not active.get("cancel_requested")
                     and state.get("running")
+                    and not self.runner.uncertain
                 ):
                     if active["task_id"] not in self.runner.registry.seen:
                         self.tasks.publish(String(data=json.dumps(active)))
@@ -158,16 +234,36 @@ def main(args=None):
                     and active["task_id"] not in self.runner.registry.seen
                     and active["status"] not in {"delivered", "failed", "cancelled"}
                 ):
+                    if (
+                        active.get("status") == "requested"
+                        and active.get("cancel_requested")
+                        and not self.runner.uncertain
+                    ):
+                        # This manager session never submitted the newly authorized
+                        # task. No Nav2 goal exists; still require stopped odometry.
+                        if self.stopped():
+                            self.report(
+                                {
+                                    **active,
+                                    "status": "cancelled",
+                                    "failure_reason": "Cancelled before goal submission; robot stopped",
+                                }
+                            )
+                            self.runner.registry.seen.add(active["task_id"])
+                        return
+                    # Lost goal handles cannot prove cancellation. Request a stop
+                    # of this single robot's orphan goal, but never authorize replan.
+                    self.runner.uncertain = True
+                    self.orphan_detected = True
+                    if self.cancel_orphan.service_is_ready() and not self.orphan_cancel_sent:
+                        self.cancel_orphan.call_async(CancelGoal.Request())
+                        self.orphan_cancel_sent = True
                     self.http(
                         "/api/transport/status",
                         {
                             **active,
-                            "status": "cancelled"
-                            if active.get("cancel_requested")
-                            else "failed",
-                            "failure_reason": "Cancelled before navigation"
-                            if active.get("cancel_requested")
-                            else "AMR manager restarted during transport",
+                            "status": "failed",
+                            "failure_reason": "AMR manager has no goal handle; stop navigation and inspect payload before reset",
                         },
                     )
             except Exception as exc:

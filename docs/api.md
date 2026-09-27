@@ -53,7 +53,19 @@ when AMR mode is disabled; invalid request fields return HTTP 422.
 These endpoints are for the trusted local simulation manager, not manual
 delivery shortcuts. The manager reports delivery only after Nav2 succeeds;
 products remain at their last confirmed station until then. Stop cancels active
-navigation in AMR mode. Failed/cancelled payload tasks require Reset.
+navigation in AMR mode. Hard destination faults request cancellation and wait for
+the manager to confirm the old action ended and the robot stopped before replanning.
+Other failed/cancelled tasks remain held for operator recovery; uncertain navigation
+requires inspection and stack restart, not merely pressing Reset.
+
+The active task in `GET /api/transport` and WebSocket snapshots additionally exposes
+`payload_loaded`, `replan_state`, `replan_reason`, `fault_id`, `original_destination`,
+`supersedes_task_id`, `cancel_latency_s` and `replan_latency_s`. Replan states are
+`cancelling`, `awaiting_replan`, or `blocked_transport`; null means no active replan
+state. These fields are supervisor-owned, not extra writable status fields.
+A loaded replacement starts with phase `delivery` and skips pickup. With no available
+compatible station, the old cancelled task remains active and retains its payload.
+An invalidated task cannot deliver; stale or invalid transitions return HTTP 409.
 See [AMR Navigation](AMR_NAVIGATION.md) for contracts and limitations.
 
 ## Add Product

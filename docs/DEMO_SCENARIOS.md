@@ -1,5 +1,13 @@
 # Demo Scenarios
 
+## Fault During AMR Delivery
+
+Run AMR mode and inject Processing A Overheat while a loaded red block is travelling
+from Vision to A. Show cancellation, the payload remaining on the robot, the linked
+replacement to B, and processing only after delivery. Fault both drills to show safe
+waiting; recover B to resume. See [Fault-Aware Replanning](FAULT_AWARE_REPLANNING.md)
+for a 45-60 second recording outline and the isolated `--fault-replan` runtime check.
+
 ## AMR Portfolio Demo (45-60 Seconds)
 
 Run the [AMR setup](AMR_NAVIGATION.md) first and wait for `AMR ready`.

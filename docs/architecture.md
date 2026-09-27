@@ -112,3 +112,40 @@ transitions, not predictive conveyor transfers, in this mode.
 
 See [AMR Navigation](AMR_NAVIGATION.md) for TF ownership, task contracts, failure
 handling, static-map generation and verification.
+
+Hard destination faults invalidate the current mission without moving its product.
+The AMR manager cancels Nav2, waits for a terminal result plus stopped odometry,
+and reports cancellation. Only then does the supervisor ask the existing scheduler
+for a replacement. Loaded tasks skip pickup and Nav2 plans from the current pose.
+No alternate means a held payload, not successful delivery. Health scores influence
+replacement choice but never trigger cancellation. See
+[Fault-Aware Replanning](FAULT_AWARE_REPLANNING.md) for contracts and races.
+
+```mermaid
+sequenceDiagram
+    participant S as FactorySupervisor
+    participant R as ProductionScheduler
+    participant M as AMR Manager
+    participant N as Nav2
+    S->>M: Invalidate destination; cancel_requested
+    M->>N: Cancel existing NavigateToPose
+    N-->>M: Terminal action result
+    Note over M: Require fresh stopped odometry
+    M-->>S: cancelled, payload retained
+    S->>R: Select compatible available station
+    alt Replacement available
+        R-->>S: Replacement destination
+        S->>M: Linked task, payload_loaded=true
+        M->>N: NavigateToPose from current pose
+        N-->>M: Success
+        M-->>S: delivered
+        Note over S: Move product; start processing
+    else No alternative
+        Note over S,M: Hold payload; await station recovery
+    end
+```
+
+This diagram describes a loaded delivery interrupted by a hard destination fault.
+Before pickup, a replacement still needs its pickup leg. Cancellation rejection or
+lost goal ownership blocks automatic replacement. ML risk changes alone do not
+enter this sequence; they only affect the existing scheduler's station selection.

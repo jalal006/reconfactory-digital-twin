@@ -294,10 +294,14 @@ Gazebo as well. Factory station faults still
 use capability-based rerouting before dispatch; a fault at an active delivery
 destination cancels that transport instead of claiming a successful handoff.
 
-**Milestone limitation:** failed/cancelled transports keep the product and robot
-payload in a conservative held state and block further transport until an explicit
-factory Reset. Inspect the payload before Reset; no automatic recovery/retry of
-a partly delivered load is implemented. Pause during active AMR transport means
+Hard destination faults now support [in-flight replanning](FAULT_AWARE_REPLANNING.md).
+The supervisor waits for cancellation and a physical stop, then selects a compatible
+replacement. Loaded replacements skip pickup; no alternative holds the payload
+until a valid destination is available. ML score changes do not cancel missions.
+
+**Remaining limitation:** other failed/cancelled transports keep the product and robot
+payload held and require operator inspection/reset; uncertain navigation requires
+stopping and restarting the stack. Pause during active AMR transport means
 cancel, not automatic action resumption. Simulated mode retains its existing
 Pause/Resume and recovery behavior. Restarting the AMR manager during a task fails
 the task rather than replaying it. Navigation tasks are not restored after a

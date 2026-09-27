@@ -56,6 +56,16 @@ and verifies that they are visible in the ROS graph.
 `/reconfactory/vision/camera_info` is also bridged when Gazebo publishes camera
 calibration metadata.
 
+## AMR Mission Replanning
+
+Optional `TRANSPORT_MODE=amr` adds `/reconfactory_amr_manager` and Nav2.
+`/reconfactory/amr/task` and `/reconfactory/amr/status` use `std_msgs/msg/String`
+JSON; navigation uses `/navigate_to_pose`. A hard destination fault cancels the
+current action. The manager waits for the terminal result and fresh stopped
+`/odom` before reporting cancellation; the supervisor then selects a replacement.
+Loaded replacements retain `payload_loaded` and `supersedes_task_id` and skip pickup.
+See [Fault-Aware Replanning](FAULT_AWARE_REPLANNING.md) for reproduction and limitations.
+
 ## Vision Node
 
 ```text

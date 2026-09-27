@@ -54,6 +54,14 @@ class TransportRequest:
     navigation_time_s: float = 0.0
     failure_reason: str | None = None
     cancel_requested: bool = False
+    payload_loaded: bool = False
+    supersedes_task_id: str | None = None
+    replan_reason: str | None = None
+    original_destination: str | None = None
+    fault_id: str | None = None
+    replan_state: str | None = None
+    cancel_latency_s: float | None = None
+    replan_latency_s: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -65,8 +73,22 @@ class TransportRequest:
                 raise ValueError(f"Missing transport {key}")
         if data["origin"] not in stations or data["destination"] not in stations:
             raise ValueError("Unknown origin or destination station")
+        loaded = data.get("payload_loaded", False)
+        if not isinstance(loaded, bool):
+            raise ValueError("payload_loaded must be boolean")
         return cls(
-            **{key: data[key] for key in ("task_id", "product_id", "origin", "destination")}
+            **{key: data[key] for key in ("task_id", "product_id", "origin", "destination")},
+            payload_loaded=loaded,
+            phase="delivery" if loaded else "pickup",
+            **{
+                key: data.get(key)
+                for key in (
+                    "supersedes_task_id",
+                    "replan_reason",
+                    "original_destination",
+                    "fault_id",
+                )
+            },
         )
 
     def update(self, payload: dict[str, Any]) -> bool:
@@ -100,6 +122,7 @@ class TransportRequest:
             raise ValueError("Invalid navigation time")
         self.status = status
         self.phase = str(payload.get("phase", self.phase))
+        self.payload_loaded = self.phase == "delivery"
         if status == "navigating" and self.started_at is None:
             self.started_at = iso_now()
         if status in TERMINAL:

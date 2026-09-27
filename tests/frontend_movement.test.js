@@ -122,11 +122,23 @@ function runFrontendMovementTests(source) {
       assert(html.includes("Anomaly 62%") && html.includes("Health 38%"), "Health card must show both scores");
       assert(html.includes("health-degrading") && html.includes("ml_isolation_forest"), "Risk/source must be visible");
       assert(!html.includes("<unsafe>"), "Health reasons must be escaped");
+      renderTransport({transport_mode: "amr", transport: {active_task: {
+        product_id: "P-AMR", origin: "vision", destination: "station_b",
+        status: "requested", phase: "delivery", payload_loaded: true,
+        supersedes_task_id: "old", original_destination: "station_a"
+      }}});
+      const banner = document.getElementById("transportState");
+      assert(banner.textContent.includes("Replanned: station_a -> station_b"), "Show replacement destinations");
+      assert(banner.textContent.includes("Payload on AMR"), "Show loaded payload");
+      renderTransport({transport_mode: "amr", transport: {active_task: {
+        product_id: "P-AMR", status: "cancelled", phase: "delivery", replan_state: "awaiting_replan"
+      }}});
+      assert(banner.textContent.includes("awaiting replan"), "Expose blocked waiting state");
     `,
   );
   run(document, { addEventListener() {} }, () => new Promise(() => {}), () => 1,
     { now: () => clock.now }, clock);
-  return "9 browser movement scenarios and 1 health-card scenario passed";
+  return "9 browser movement, 1 health-card and 2 replanning-banner scenarios passed";
 }
 
 if (typeof require === "function") {
