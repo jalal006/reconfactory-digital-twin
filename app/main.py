@@ -88,9 +88,18 @@ class RobotPose(BaseModel):
     yaw: float = Field(allow_inf_nan=False)
 
 
+class MotionCounters(BaseModel):
+    session_id: str = Field(min_length=1, max_length=128)
+    sequence: int = Field(ge=0)
+    elapsed_s: float = Field(ge=0, allow_inf_nan=False)
+    distance_m: float = Field(ge=0, allow_inf_nan=False)
+    rotation_rad: float = Field(ge=0, allow_inf_nan=False)
+
+
 class TransportHeartbeat(BaseModel):
     ready: bool
     robot_pose: RobotPose | None = None
+    motion: MotionCounters | None = None
 
 
 class TransportStatusRequest(BaseModel):
@@ -186,9 +195,14 @@ async def transport_state() -> dict[str, Any]:
 async def transport_heartbeat(payload: TransportHeartbeat) -> dict[str, bool]:
     if not supervisor.transport:
         raise HTTPException(409, "AMR mode is disabled")
-    supervisor.transport.heartbeat(
-        payload.ready, payload.robot_pose.model_dump() if payload.robot_pose else None
-    )
+    try:
+        supervisor.transport.heartbeat(
+            payload.ready,
+            payload.robot_pose.model_dump() if payload.robot_pose else None,
+            payload.motion.model_dump() if payload.motion else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
     return {"ok": True}
 
 

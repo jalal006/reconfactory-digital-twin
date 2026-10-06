@@ -56,7 +56,7 @@ def main():
     from rclpy.parameter import Parameter
     from rclpy.qos import qos_profile_sensor_data
     from rclpy.time import Time
-    from sensor_msgs.msg import LaserScan
+    from sensor_msgs.msg import BatteryState, LaserScan
     from tf2_ros import Buffer, TransformException, TransformListener
 
     from reconfactory.transport import load_station_goals
@@ -87,6 +87,12 @@ def main():
         LaserScan, "/scan", lambda msg: samples.update(scan=msg), qos_profile_sensor_data
     )
     node.create_subscription(Odometry, "/odom", odometry, qos_profile_sensor_data)
+    node.create_subscription(
+        BatteryState,
+        "/reconfactory/amr/battery_state",
+        lambda msg: samples.update(battery=msg),
+        10,
+    )
     node.create_subscription(Twist, "/cmd_vel", lambda msg: samples.update(command=msg), 10)
     node.create_subscription(
         Twist, "/cmd_vel_nav", lambda msg: samples.update(raw_command=msg), 10
@@ -175,6 +181,9 @@ def main():
         else:
             assert wait(client.server_is_ready, args.timeout), "NavigateToPose unavailable"
             print("PASS: NavigateToPose action server", flush=True)
+            assert wait(lambda: "battery" in samples, 15), "BatteryState unavailable"
+            assert 0 <= samples["battery"].percentage <= 1 and samples["battery"].present
+            print("PASS: standard BatteryState publishes modeled SOC", flush=True)
         if args.plan_all:
             planner = ActionClient(node, ComputePathToPose, "/compute_path_to_pose")
             assert wait(planner.server_is_ready, args.timeout), "Planner action unavailable"
@@ -233,7 +242,8 @@ def main():
                             flush=True,
                         )
             print(
-                "PASS: Nav2 planned all 56 directed station pairs (planning only)", flush=True
+                f"PASS: Nav2 planned all {len(stations) * (len(stations) - 1)} directed station pairs (planning only)",
+                flush=True,
             )
         for name in args.goals:
             motion = MotionTrace()

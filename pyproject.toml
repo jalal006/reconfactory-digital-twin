@@ -1,6 +1,8 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+# ROS launch tests run through the separate integration scripts, not this suite.
+addopts = "-p no:launch_testing -p no:launch_ros"
 
 [tool.ruff]
 line-length = 96

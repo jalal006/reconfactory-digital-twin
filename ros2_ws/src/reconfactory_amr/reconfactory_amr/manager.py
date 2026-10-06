@@ -10,6 +10,7 @@ import time
 from collections import deque
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+from uuid import uuid4
 
 
 def main(args=None):
@@ -21,6 +22,7 @@ def main(args=None):
     from rclpy.action import ActionClient
     from rclpy.node import Node
     from rclpy.time import Time
+    from sensor_msgs.msg import BatteryState
     from std_msgs.msg import String
     from tf2_ros import Buffer, TransformException, TransformListener
 
@@ -51,6 +53,17 @@ def main(args=None):
             self.session_started = False
             self.stopped_since = None
             self.odom_at = 0.0
+            self.motion = {
+                "session_id": uuid4().hex,
+                "sequence": 0,
+                "elapsed_s": 0.0,
+                "distance_m": 0.0,
+                "rotation_rad": 0.0,
+            }
+            self.last_odom_stamp = None
+            self.battery_publisher = self.create_publisher(
+                BatteryState, "/reconfactory/amr/battery_state", 10
+            )
             self.runner = NavigationRunner(
                 self.stations, self.client, self.goal, self.report, stopped=self.stopped
             )
@@ -63,6 +76,20 @@ def main(args=None):
         def odometry(self, msg):
             self.odom_at = time.monotonic()
             velocity = msg.twist.twist
+            stamp = msg.header.stamp.sec + msg.header.stamp.nanosec / 1e9
+            if self.last_odom_stamp is not None:
+                dt = stamp - self.last_odom_stamp
+                if 0 < dt <= 1 and all(
+                    math.isfinite(v)
+                    for v in (velocity.linear.x, velocity.linear.y, velocity.angular.z)
+                ):
+                    self.motion["sequence"] += 1
+                    self.motion["elapsed_s"] += dt
+                    self.motion["distance_m"] += (
+                        math.hypot(velocity.linear.x, velocity.linear.y) * dt
+                    )
+                    self.motion["rotation_rad"] += abs(velocity.angular.z) * dt
+            self.last_odom_stamp = stamp
             if (
                 math.hypot(velocity.linear.x, velocity.linear.y) < 0.03
                 and abs(velocity.angular.z) < 0.05
@@ -126,6 +153,7 @@ def main(args=None):
                             "destination",
                             "payload_loaded",
                             "supersedes_task_id",
+                            "mission_type",
                         )
                     ):
                         raise ValueError("Task does not match supervisor authorization")
@@ -166,6 +194,15 @@ def main(args=None):
             try:
                 state = self.http("/api/transport")
                 active = state.get("active_task") or {}
+                if state.get("energy"):
+                    from reconfactory.energy import battery_ros_fields
+
+                    battery = BatteryState()
+                    battery.header.stamp = self.get_clock().now().to_msg()
+                    battery.header.frame_id = "base_link"
+                    for key, value in battery_ros_fields(state["energy"]).items():
+                        setattr(battery, key, value)
+                    self.battery_publisher.publish(battery)
                 if not self.session_started:
                     self.session_started = True
                     if active and active.get("status") not in {
@@ -219,6 +256,7 @@ def main(args=None):
                         and not busy
                         and not self.runner.uncertain,
                         "robot_pose": pose,
+                        "motion": self.motion,
                     },
                 )
                 if (

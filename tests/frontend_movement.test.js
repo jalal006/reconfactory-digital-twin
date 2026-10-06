@@ -134,11 +134,23 @@ function runFrontendMovementTests(source) {
         product_id: "P-AMR", status: "cancelled", phase: "delivery", replan_state: "awaiting_replan"
       }}});
       assert(banner.textContent.includes("awaiting replan"), "Expose blocked waiting state");
+      renderTransport({transport_mode: "amr", energy: {
+        state_of_charge: .21, state: "charging", charge_target_soc: .8,
+        estimated_energy_wh: 1.35, deferred_transport: {product_id: "P-001"}, reason: null
+      }});
+      const energyBanner = document.getElementById("energyState");
+      assert(energyBanner.textContent.includes("21.0%") && energyBanner.textContent.includes("CHARGING"), "Show battery and charging state");
+      assert(energyBanner.textContent.includes("80%") && energyBanner.textContent.includes("1.35 Wh") && energyBanner.textContent.includes("P-001"), "Show target, estimate and deferred work");
+      renderTransport({transport_mode: "simulated", energy: {
+        state_of_charge: .04, state: "critical_energy", charge_target_soc: .8,
+        reason: "Inspect <payload>"
+      }});
+      assert(banner.hidden && energyBanner.textContent.includes("CRITICAL ENERGY"), "Logical mode exposes energy without ROS banner");
     `,
   );
   run(document, { addEventListener() {} }, () => new Promise(() => {}), () => 1,
     { now: () => clock.now }, clock);
-  return "9 browser movement, 1 health-card and 2 replanning-banner scenarios passed";
+  return "9 browser movement, 1 health-card, 2 replanning-banner and 2 energy-banner scenarios passed";
 }
 
 if (typeof require === "function") {

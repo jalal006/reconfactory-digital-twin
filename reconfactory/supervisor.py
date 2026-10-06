@@ -21,6 +21,8 @@ from .config import (
     load_product_recipes,
     load_routing_weights,
 )
+from .energy import BatteryConfig
+from .energy_policy import EnergyPolicy
 from .faults import DiagnosisEngine, FaultDetector
 from .logger import DataLogger
 from .models import (
@@ -37,6 +39,7 @@ from .reconfiguration import ReconfigurationManager
 from .scheduler import ProductionScheduler
 from .stations import CompletedOperation, StationController
 from .tracker import ProductTracker
+from .transport import load_station_goals
 
 VISUAL_SYNC = {
     "min_transition_ms": 650,
@@ -134,6 +137,14 @@ class FactorySupervisor:
         ).lower()
         if self.transport_mode not in {"simulated", "amr"}:
             raise ValueError("TRANSPORT_MODE must be simulated or amr")
+        self.energy = EnergyPolicy(
+            self,
+            load_station_goals(
+                Path(__file__).resolve().parents[1]
+                / "ros2_ws/src/reconfactory_amr/config/stations.yaml"
+            ),
+            BatteryConfig.load(self.config_dir),
+        )
         self.transport = (
             FactoryTransport(
                 self,
@@ -240,6 +251,8 @@ class FactorySupervisor:
             if not self.running:
                 break
             self.tick_count += 1
+            if not self.transport:
+                self.energy.logical_tick(AUTO_TICK_SECONDS)
             self._update_machine_health()
             self._detect_faults()
             self._tick_stations()
@@ -458,6 +471,7 @@ class FactorySupervisor:
             "maintenance_mode": self.maintenance_mode,
             "health_scheduling_enabled": self.scheduler.health_policy["enabled"],
             "transport": self.transport.snapshot() if self.transport else None,
+            "energy": self.energy.snapshot(),
             "tick": self.tick_count,
             "simulation_speed": self.simulation_speed,
             "last_decision": self.last_decision,
@@ -642,6 +656,8 @@ class FactorySupervisor:
         vision = self.stations.get("vision")
         if not vision or not vision.can_accept("visual_inspection"):
             return
+        if not self.energy.logical_transfer(self.tracker.get(self.input_queue[0]), "vision"):
+            return
         product_id = self.input_queue.popleft()
         product = self.tracker.move(product_id, "vision")
         product.status = ProductStatus.PROCESSING
@@ -694,6 +710,9 @@ class FactorySupervisor:
                 else:
                     retained.append(product_id)
                 continue
+            if not self.energy.logical_transfer(product, "quality"):
+                retained.append(product_id)
+                continue
             product = self.tracker.move(product_id, "quality")
             product.status = ProductStatus.PROCESSING
             product.assigned_station = "quality"
@@ -717,6 +736,8 @@ class FactorySupervisor:
     ) -> bool:
         station = self.scheduler.select_station(product, process, "processing")
         if station:
+            if not self.energy.logical_transfer(product, station.machine_id):
+                return False
             previous_station = product.assigned_station
             product = self.tracker.move(product.product_id, station.machine_id)
             product.status = ProductStatus.PROCESSING

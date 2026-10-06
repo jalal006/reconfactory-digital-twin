@@ -204,3 +204,12 @@ Optional RViz config:
 ```bash
 rviz2 -d ros2_ws/src/reconfactory_ros/rviz/vision_debug.rviz
 ```
+
+## AMR Energy Telemetry
+
+The AMR manager reports cumulative odometry time/distance/rotation to the backend
+and publishes the backend-computed energy state on
+`/reconfactory/amr/battery_state` (`sensor_msgs/msg/BatteryState`). ROS does not own
+the battery policy or product scheduler. `percentage` is SOC in 0..1; charging
+status is reported only during eligible dock charging. Unknown physical fields
+remain NaN. See [Energy-Aware AMR](ENERGY_AWARE_AMR.md) for demo and verification.

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import math
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from .energy import distance, leg_energy
 from .models import Product, ProductStatus, Severity
 from .transport import TERMINAL, TransportRequest, load_station_goals, task_timeout_s
 
@@ -27,17 +29,117 @@ class FactoryTransport:
         self.cancel_time = 0.0
         self.cancelled_time = 0.0
         self.retired: dict[str, dict] = {}
+        self.motion_session = None
+        self.motion_sequence = -1
+        self.motion_totals = (0.0, 0.0, 0.0)
+        self.retired_motion_sessions: set[str] = set()
 
-    def heartbeat(self, ready: bool, pose: dict | None = None) -> None:
+    def heartbeat(
+        self, ready: bool, pose: dict | None = None, motion: dict | None = None
+    ) -> None:
         self.last_heartbeat = time.monotonic()
         self.ready = ready
         self.robot_pose = pose
+        if motion is not None:
+            self._motion_update(motion)
+
+    def _motion_update(self, motion):
+        totals = tuple(motion[k] for k in ("elapsed_s", "distance_m", "rotation_rad"))
+        if any(not math.isfinite(value) or value < 0 for value in totals):
+            raise ValueError("Motion counters must be finite and nonnegative")
+        if motion["session_id"] in self.retired_motion_sessions:
+            return
+        if motion["session_id"] != self.motion_session:
+            baseline = (0.0, 0.0, 0.0) if self.motion_session is None else totals
+            if self.motion_session is not None:
+                self.retired_motion_sessions.add(self.motion_session)
+            self.motion_session = motion["session_id"]
+            self.motion_sequence = -1
+            self.motion_totals = baseline
+        if motion["sequence"] <= self.motion_sequence:
+            return
+        delta = tuple(a - b for a, b in zip(totals, self.motion_totals, strict=True))
+        if any(value < 0 for value in delta):
+            raise ValueError("Motion counters cannot decrease within a session")
+        if delta[0] == 0 and (delta[1] or delta[2]):
+            raise ValueError("Motion requires positive elapsed time")
+        self.motion_sequence, self.motion_totals = motion["sequence"], totals
+        dt, meters, radians = delta
+        if dt <= 0:
+            return
+        e = self.factory.energy
+        task = self.active
+        at_dock = bool(
+            self.robot_pose
+            and distance(self.robot_pose, self.stations["charging_dock"])
+            <= e.battery.config.dock_tolerance_m
+        )
+        e.update(
+            dt,
+            meters / dt,
+            radians / dt,
+            loaded=bool(task and task.payload_loaded),
+            at_charger=bool(
+                task
+                and task.mission_type == "charge"
+                and task.status == "delivered"
+                and at_dock
+                and meters / dt < 0.03
+                and radians / dt < 0.05
+                and self.factory.running
+            ),
+        )
+        if (
+            task
+            and task.status not in TERMINAL
+            and task.payload_loaded
+            and self.robot_pose
+            and e.battery.remaining_wh
+            < e.battery.config.capacity_wh * e.battery.config.critical_soc
+            + leg_energy(
+                e.battery.config,
+                distance(self.robot_pose, self.stations[task.destination]),
+                True,
+            )
+        ):
+            e.critical(
+                "Remaining loaded delivery estimate violates critical reserve; payload held"
+            )
+        if e.state == "critical_energy":
+            self.cancel()
+        if (
+            task
+            and task.mission_type == "charge"
+            and task.status == "delivered"
+            and e.state == "ready"
+        ):
+            self.active = None
+
+    def _charge(self):
+        e = self.factory.energy
+        current = self.robot_pose or self.stations["home"]
+        if not e.begin_charge_trip(current):
+            return
+        self.active = TransportRequest(
+            "AMR",
+            "home",
+            "charging_dock",
+            mission_type="charge",
+            phase="delivery",
+            estimated_energy_wh=leg_energy(
+                e.battery.config, distance(current, self.stations["charging_dock"]), False
+            ),
+            energy_start_wh=e.battery.energy_consumed_wh,
+        )
+        self.request_time = time.monotonic()
+        self._event("charging_mission_requested", self.active)
 
     def snapshot(self) -> dict[str, Any]:
         return {
             "ready": self.ready and time.monotonic() - self.last_heartbeat < 5.0,
             "active_task": self.active.to_dict() if self.active else None,
             "robot_pose": self.robot_pose,
+            "energy": self.factory.energy.snapshot(),
         }
 
     def cancel(self) -> None:
@@ -82,6 +184,20 @@ class FactoryTransport:
         )
         if station is None or (station.machine_id == "vision" and f.pending_vision_product_id):
             return
+        if not f.energy.authorize(
+            product.product_id,
+            old.origin,
+            station.machine_id,
+            self.robot_pose or self.stations[old.origin],
+            old.payload_loaded,
+        ):
+            old.failure_reason = f.energy.reason or "Replacement waiting for energy"
+            # Never overwrite the held fault mission with an independent charger goal.
+            if not old.payload_loaded and f.energy.state == "charge_required":
+                self.retired[old.task_id] = old.to_dict()
+                product.status = ProductStatus.QUEUED
+                self._charge()
+            return
         new = TransportRequest(
             product.product_id,
             old.origin,
@@ -94,6 +210,8 @@ class FactoryTransport:
             fault_id=old.fault_id,
             cancel_latency_s=old.cancel_latency_s,
             replan_latency_s=time.monotonic() - self.cancelled_time,
+            estimated_energy_wh=f.energy.estimate_wh,
+            energy_start_wh=f.energy.battery.energy_consumed_wh,
         )
         self.retired[old.task_id] = old.to_dict()
         # Bound replay bookkeeping; older messages still fail closed by task identity.
@@ -108,10 +226,15 @@ class FactoryTransport:
         f._record_predictive_assignment()
 
     def check_timeout(self) -> None:
+        if time.monotonic() - self.last_heartbeat > 2:
+            self.factory.energy.battery.is_charging = False
         if self.active and self.active.status not in TERMINAL:
             station = self.factory.stations.get(self.active.destination)
             if station and not station.healthy:
                 self.invalidate_destination(station.machine_id)
+            e = self.factory.energy
+            if e.state == "critical_energy":
+                self.cancel()
         if self.active and self.active.status not in TERMINAL:
             now = time.monotonic()
             if (
@@ -183,6 +306,17 @@ class FactoryTransport:
             request = TransportRequest(
                 product.product_id, product.current_location, destination
             )
+            if not f.energy.authorize(
+                product.product_id,
+                product.current_location,
+                destination,
+                self.robot_pose or self.stations["home"],
+            ):
+                if f.energy.state == "charge_required":
+                    self._charge()
+                return
+            request.estimated_energy_wh = f.energy.estimate_wh
+            request.energy_start_wh = f.energy.battery.energy_consumed_wh
             TransportRequest.from_dict(request.to_dict(), self.stations)
             self.active = request
             origin_station = f.stations.get(product.current_location)
@@ -238,7 +372,33 @@ class FactoryTransport:
             self.invalidate_destination(task.destination)
         if not task.update(payload):
             return
+        if task.status in TERMINAL:
+            task.actual_energy_wh = (
+                self.factory.energy.battery.energy_consumed_wh - task.energy_start_wh
+            )
         self._event(f"transport_{task.status}", task)
+        if task.mission_type == "charge":
+            e = self.factory.energy
+            if task.status == "delivered":
+                if (
+                    not self.robot_pose
+                    or distance(self.robot_pose, self.stations["charging_dock"])
+                    > e.battery.config.dock_tolerance_m
+                ):
+                    e.state, e.reason = (
+                        "blocked_energy",
+                        "Charger arrival lacks a matching localized dock pose",
+                    )
+                    e.event("charge_failed")
+                else:
+                    e.arrived_at_charger()
+            elif task.status in {"failed", "cancelled"}:
+                e.state, e.reason = (
+                    "blocked_energy",
+                    "Charging navigation failed or cancelled; inspect robot before reset",
+                )
+                e.event("charge_failed")
+            return
         product = self.factory.tracker.get(task.product_id)
         if task.status == "delivered":
             self._arrive(product, task.destination)

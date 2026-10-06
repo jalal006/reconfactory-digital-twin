@@ -255,3 +255,13 @@ the dashboard destination A beside Gazebo/RViz. Inject A Overheat. Point out
 cancellation, the stopped robot holding the same payload, replacement B, and the
 new path from its current pose. Finish with processing at B and the linked
 transport events. For a second clip, fault both machines and recover B.
+
+## Energy Interaction
+
+Cancellation and stopped confirmation still precede replacement authorization.
+The supervisor checks energy for the scheduler-selected replacement. Safe loaded
+replacements preserve the payload and navigate directly; unsafe ones remain held
+in `critical_energy`. An unloaded deferred replacement may use the same mission
+slot for charging, then revalidate the station. Routine low planning reserve does
+not interrupt a safe loaded mission. No charging goal runs alongside a production
+or cancellation goal. See [Energy-Aware AMR](ENERGY_AWARE_AMR.md).

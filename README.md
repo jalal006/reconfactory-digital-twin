@@ -9,7 +9,7 @@
 A fault-aware smart factory digital twin with Gazebo camera perception,
 ROS 2 / OpenCV inspection, optional Nav2 autonomous robot transport, an animated
 browser dashboard, ML-based predictive maintenance, fault-aware in-flight AMR
-replanning, and SQLite analytics.
+replanning, battery-aware autonomous charging, and SQLite analytics.
 
 An optional **single-AMR transport mode** adds a differential-drive Gazebo robot,
 LiDAR, AMCL localization and Nav2 delivery tasks. The supervisor waits for actual
@@ -48,6 +48,7 @@ drill-to-quality access; the original conveyor layout remains the default.
 | Analytics | Throughput, cycle time, utilization, downtime and recovery metrics |
 | Integration | ROS 2 state/fault/command topics and optional OPC UA |
 | Robot transport | One differential-drive AMR, LiDAR, AMCL, Nav2 and delivery-gated production |
+| Energy autonomy | Motion-based battery model, mission reserve checks, Nav2 charging and deferred-work resumption |
 | Quality | Automated regression tests plus Ruff lint and formatting checks |
 
 ## Factory Flow
@@ -82,11 +83,14 @@ flowchart LR
     ROSIMG --> VISNODE[ROS 2 Vision Inspector]
     VISNODE --> API
     SUP --> TASK[Transport Task]
+    SUP --> ENERGY[Energy Policy + Battery Model]
+    ENERGY -->|Authorize Production or Charging| TASK
     TASK --> AMR[AMR Manager]
     AMR --> NAV[Nav2 NavigateToPose]
     NAV --> ROBOT[Gazebo AMR]
     ROBOT --> SENS[LiDAR + Odometry]
     SENS --> NAV
+    SENS -->|Motion Counters| ENERGY
     AMR -->|Delivery Status| SUP
     SUP -->|Hard Destination Fault: Cancel| AMR
     AMR -->|Cancellation Confirmed + Robot Stopped| SUP
@@ -103,6 +107,13 @@ invalidates a faulted destination, the manager ends the old Nav2 action and conf
 a stop, and only then does the supervisor authorize a scheduler-selected replacement.
 Loaded replacements navigate from the current robot pose without returning to pickup.
 Health scores influence station choice but do not repeatedly cancel active missions.
+
+Energy admission uses estimated pickup/delivery cost and reserves. An empty AMR
+can defer work, navigate to its charging dock, recharge gradually and revalidate
+the destination before resuming. Loaded work is retained on critical holds.
+The model is deterministic simulation, not calibrated battery physics.
+See [energy configuration, equations, demo and comparison](docs/ENERGY_AWARE_AMR.md).
+Quick low-battery demo: `AMR_INITIAL_SOC=0.21 TRANSPORT_MODE=amr bash run_ubuntu.sh`.
 
 ## Install And Run
 
@@ -455,35 +466,34 @@ Main topics:
 - `/reconfactory/vision/image_raw`
 - `/reconfactory/vision/result`
 - `/reconfactory/vision/debug_image`
+- `/reconfactory/amr/battery_state` (AMR mode)
 
 See [ROS 2 integration](docs/ROS2_INTEGRATION.md) for command examples.
 
 ## Tests
 
-Latest verification (September 27, 2026): **241 Python tests passed in WSL**, Ruff
-lint/format passed, and the browser harness passed nine movement, one health-card
-and two replanning-banner scenarios. The preceding 238-test suite also passed on
-Windows. Two live fault-during-delivery runs completed through real Gazebo camera
-inspection, cancellation and delivery to B; fault-to-B delivery took 11.12-11.32 s.
-Live backend-outage and manager-restart checks held the payload without false
-delivery. The maintainer also reported passing the manual Gazebo/RViz and recovery
-checklist. These samples are not safety or performance guarantees.
+Latest verification (October 6, 2026): **276 Python tests passed on Windows and
+WSL**, Ruff lint/format passed, and the browser harness passed nine movement, one
+health-card, two replanning-banner and two energy-banner scenarios. Both ROS
+packages built. Live low-SOC charging completed through real camera inspection
+and Accepted output; a separate loaded-fault run retained its payload and delivered
+to B. Nav2 planned all 72 directed station pairs including the charger. See
+[energy model, experiment and measured verification](docs/ENERGY_AWARE_AMR.md).
+Earlier backend-outage and manager-restart checks held payload without false
+delivery. These samples are not safety or performance guarantees.
 
 ```bash
 python -m pytest
 python -m ruff check .
 python -m ruff format --check .
+node tests/frontend_movement.test.js
 ```
 
 See [camera requirements audit](docs/VISION_ACCEPTANCE_AUDIT.md) for verification
 results, known limitations, and the remaining live demo checks.
 
-Navigation verification (September 21, 2026): **183 Python tests passed on
-Windows and Ubuntu**, with Ruff lint/format checks passing. Six actual Gazebo
-navigation goals completed in 8.5-11.6 seconds each without full spins. A normal
-red product completed the real-camera AMR production cycle in 54 seconds, excluding
-startup. These are measured samples, not timing or reliability guarantees.
-See [AMR verification](docs/AMR_VERIFICATION.md) for detailed results and limits.
+Earlier navigation measurements and their limitations remain documented in
+[AMR verification](docs/AMR_VERIFICATION.md).
 
 With the normal demo stopped, reproduce the isolated navigation and production
 checks from a sourced Ubuntu/WSL terminal:
@@ -510,12 +520,27 @@ replanning under identical logical fault timing: zero versus one completed produ
 Its scripted ticks are **not** measured robot travel time. Detailed observations,
 remaining limits and result paths are in [Fault-Aware Replanning](docs/FAULT_AWARE_REPLANNING.md).
 
-GitHub Actions runs the same checks on every push and pull request.
+GitHub Actions runs Python tests, Ruff and browser regressions on every push and
+pull request. Node.js is needed only for the JavaScript test harness, not to run
+the dashboard or backend.
 
-In a sourced ROS terminal, system pytest plugins may conflict with the project
-virtual environment. For a plugin-loading error such as missing `lark`, use
-`env -u PYTHONPATH .venv-wsl/bin/python -m pytest` to run the same Python suite
-without inherited ROS packages.
+The unit-suite configuration excludes the two ROS launch-testing plugins, so
+`python -m pytest` also works after sourcing ROS without installing `lark` into
+the project virtual environment. Live ROS/Gazebo checks remain separate scripts;
+no project tests or general-purpose pytest plugins are disabled.
+
+Energy verification and the reproducible comparison:
+
+```bash
+.venv-wsl/bin/python scripts/compare_energy_policies.py
+source /opt/ros/jazzy/setup.bash
+source ros2_ws/install/setup.bash
+python3 scripts/run_amr_smoke.py --energy
+```
+
+Stop the normal demo before running the isolated live check. The comparison uses
+logical travel; the smoke check uses actual Nav2 and Gazebo. See
+[energy assumptions, measurements and demo](docs/ENERGY_AWARE_AMR.md).
 
 ## Useful Commands
 
@@ -554,6 +579,7 @@ docs/              Technical documentation
 - [ROS 2 integration](docs/ROS2_INTEGRATION.md)
 - [Gazebo integration](docs/GAZEBO_FALLBACK.md)
 - [AMR navigation](docs/AMR_NAVIGATION.md)
+- [Battery-aware autonomy, charging and energy comparison](docs/ENERGY_AWARE_AMR.md)
 - [Fault-aware replanning, resilience tests and measured results](docs/FAULT_AWARE_REPLANNING.md)
 - [AMR verification and change inventory](docs/AMR_VERIFICATION.md)
 - [Database schema](docs/database_schema.md)
@@ -575,6 +601,10 @@ docs/              Technical documentation
 - Manager-crash stop confirmation took 4.29-5.87 s in two tests; this is not an
   independent emergency-stop watchdog. Uncertain navigation requires inspection
   and stack restart. Missions are not restored after loss of backend state.
+- Battery consumption is a deterministic simulation model with geometric mission
+  estimates and accelerated demo charging, not calibrated hardware battery physics.
+  Critical-energy holds require inspection/reset; browser fallback uses logical
+  transport rather than physical robot navigation.
 
 ## License
 

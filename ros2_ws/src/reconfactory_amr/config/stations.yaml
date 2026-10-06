@@ -2,6 +2,7 @@
 # Product placement remains at the existing inspection/processing surface.
 stations:
   home: {x: -0.8, y: 0.0, yaw: 0.0}
+  charging_dock: {x: -1.2, y: -1.3, yaw: 3.141592653589793}
   input_queue: {x: 0.0, y: 0.7, yaw: 1.5708}
   vision: {x: 2.0, y: 0.7, yaw: 1.5708}
   station_a: {x: 4.2, y: 0.7, yaw: 1.5708}

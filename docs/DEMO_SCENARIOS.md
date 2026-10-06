@@ -77,3 +77,13 @@ Do not describe this as increased throughput or prevention of the imposed fault.
 For a 45-60 second recording, show the score/source, changed assignment and
 comparison table. See [Predictive Maintenance](PREDICTIVE_MAINTENANCE.md) and
 [measured results](MAINTENANCE_VERIFICATION.md).
+
+## Battery-Aware Autonomy
+
+Run `AMR_INITIAL_SOC=0.21 TRANSPORT_MODE=amr bash run_ubuntu.sh`, add a red block,
+then Start. Show its unchanged input location, the deferred intent and the empty
+robot navigating to the green charger pad. Show SOC rising gradually to 80%, then
+the fresh production task and pickup. For a 45-60 second clip, show the charger
+arrival, a short charging segment, and resumed delivery with the event log; disclose
+any time cuts. End on the comparison report rather than claiming faster transport.
+Full procedure and limitations: [Energy-Aware AMR](ENERGY_AWARE_AMR.md).

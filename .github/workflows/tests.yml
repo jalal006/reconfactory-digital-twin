@@ -28,3 +28,8 @@ jobs:
         run: python -m ruff format --check .
       - name: Run tests
         run: python -m pytest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run browser regression tests
+        run: node tests/frontend_movement.test.js

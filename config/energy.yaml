@@ -1,0 +1,16 @@
+# Demonstration-scale coefficients, not calibrated physical battery measurements.
+capacity_wh: 100.0
+initial_soc: 0.9
+idle_power_w: 18.0
+linear_cost_wh_per_m: 0.2
+angular_cost_wh_per_rad: 0.03
+payload_multiplier: 1.25
+planning_reserve_soc: 0.2
+critical_soc: 0.05
+charge_target_soc: 0.8
+# Accelerated charging for portfolio demonstrations.
+charging_power_w: 7200.0
+estimate_speed_m_s: 0.35
+turn_allowance_rad: 3.141592653589793
+estimate_safety_factor: 1.4
+dock_tolerance_m: 0.18

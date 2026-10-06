@@ -1535,6 +1535,13 @@ async function runExperiment() {
 }
 
 function renderTransport(state) {
+  const energy = state.energy || state.transport?.energy;
+  const energyState = document.getElementById("energyState");
+  if (energyState) {
+    energyState.textContent = energy
+      ? `Battery: ${(energy.state_of_charge * 100).toFixed(1)}% | ${energy.state.replaceAll("_", " ").toUpperCase()} | Target: ${(energy.charge_target_soc * 100).toFixed(0)}%${energy.estimated_energy_wh != null ? " | Estimate: " + energy.estimated_energy_wh.toFixed(2) + " Wh" : ""}${energy.deferred_transport ? " | Waiting: " + energy.deferred_transport.product_id : ""}${energy.reason ? " | " + energy.reason : ""}`
+      : "";
+  }
   const transportState = document.getElementById("transportState");
   transportState.hidden = state.transport_mode !== "amr";
   const task = state.transport?.active_task;

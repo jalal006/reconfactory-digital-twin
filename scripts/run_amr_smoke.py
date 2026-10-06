@@ -11,6 +11,7 @@ import socket
 import subprocess
 import sys
 import time
+from collections import deque
 from pathlib import Path
 from urllib.request import Request, urlopen
 
@@ -21,6 +22,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--goal-timeout", type=float, default=100.0)
     mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--energy", action="store_true", help="Low-SOC charging then real production delivery"
+    )
     mode.add_argument("--manual-drive", action="store_true")
     mode.add_argument(
         "--resilience",
@@ -71,7 +75,11 @@ def main():
     }
     if args.manual_drive:
         env["RECONFACTORY_AMR_NAV2"] = "false"
+    if args.energy:
+        env["AMR_INITIAL_SOC"] = "0.21"
     url = f"http://127.0.0.1:{port}"
+    energy_node = None
+    battery_samples = deque(maxlen=4000)
 
     def http(path, payload=None):
         request = Request(
@@ -122,7 +130,11 @@ def main():
                 return
             goals = args.navigation_only or (
                 []
-                if args.vision_only or args.factory_only or args.fault_replan or args.resilience
+                if args.vision_only
+                or args.factory_only
+                or args.fault_replan
+                or args.resilience
+                or args.energy
                 else ["home", "input_queue", "vision"]
             )
             subprocess.run(
@@ -160,10 +172,25 @@ def main():
                     timeout=180,
                 )
                 return
+            if args.energy:
+                import rclpy
+                from sensor_msgs.msg import BatteryState
+
+                os.environ["ROS_DOMAIN_ID"] = env["ROS_DOMAIN_ID"]
+                rclpy.init()
+                energy_node = rclpy.create_node("reconfactory_energy_verifier")
+                energy_node.create_subscription(
+                    BatteryState,
+                    "/reconfactory/amr/battery_state",
+                    lambda msg: battery_samples.append(msg),
+                    10,
+                )
             product = http("/api/products", {"product_type": "red_block"})["product"]
             http("/api/start", {})
             started = time.monotonic()
             replan = {}
+            charge_samples = []
+            energy_states = set()
             seen_tasks = set()
             deadline = time.monotonic() + 900
             while time.monotonic() < deadline:
@@ -180,6 +207,20 @@ def main():
                     p for p in state["products"] if p["product_id"] == product["product_id"]
                 )
                 inspection = state.get("last_inspection_result") or {}
+                if args.energy:
+                    for _ in range(20):
+                        rclpy.spin_once(energy_node, timeout_sec=0)
+                    energy = state["energy"]
+                    if energy["state"] not in energy_states:
+                        energy_states.add(energy["state"])
+                        print(f"Energy state: {json.dumps(energy)}", flush=True)
+                    if energy["state"] in {"navigating_to_charger", "charging"}:
+                        assert p["current_location"] == "input_queue", p
+                        assert (
+                            task["mission_type"] == "charge" and not task["payload_loaded"]
+                        ), task
+                    if energy["state"] == "charging":
+                        charge_samples.append(energy["state_of_charge"])
                 if args.fault_replan:
                     now = time.monotonic() - started
                     pose = state["transport"].get("robot_pose") or {}
@@ -239,6 +280,37 @@ def main():
                     )
                     return
                 if p["status"] in {"completed", "rejected"}:
+                    if args.energy:
+                        assert {"navigating_to_charger", "charging", "ready"} <= energy_states
+                        assert (
+                            len(charge_samples) > 2 and charge_samples[-1] > charge_samples[0]
+                        )
+                        assert state["energy"]["charge_cycles"] == 1
+                        assert any(
+                            m.power_supply_status == BatteryState.POWER_SUPPLY_STATUS_CHARGING
+                            for m in battery_samples
+                        )
+                        assert max(m.percentage for m in battery_samples) >= 0.79
+                        assert (
+                            abs(
+                                battery_samples[-1].percentage
+                                - state["energy"]["state_of_charge"]
+                            )
+                            < 0.03
+                        )
+                        assert battery_samples[-1].percentage < 0.79, (
+                            "Navigation must consume energy after charging"
+                        )
+                        result = {
+                            "states": sorted(energy_states),
+                            "charging_samples": charge_samples,
+                            "completed_at_s": time.monotonic() - started,
+                            "energy": state["energy"],
+                            "ros_battery_samples": len(battery_samples),
+                            "ros_final_soc": battery_samples[-1].percentage,
+                        }
+                        (logs / "energy_result.json").write_text(json.dumps(result, indent=2))
+                        print(f"PASS charging measurements: {json.dumps(result)}", flush=True)
                     if args.fault_replan:
                         assert replan.get("processing_at_b"), replan
                         assert replan.get("gazebo_payload_reported"), replan
@@ -264,6 +336,9 @@ def main():
                 time.sleep(0.1 if args.fault_replan else 1)
             raise RuntimeError("Factory delivery demo timed out")
         finally:
+            if energy_node is not None:
+                energy_node.destroy_node()
+                rclpy.shutdown()
             try:
                 os.killpg(process.pid, signal.SIGINT)
             except ProcessLookupError:

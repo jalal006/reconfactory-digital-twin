@@ -131,6 +131,31 @@ def prepare_world():
     tree = ET.parse(ROOT / "gazebo_fallback/worlds/reconfactory.world.sdf")
     world = tree.getroot().find("world")
     arrange_workcells(world)
+    cabinet_xy = layout_config()["service"]["charger_cabinet"]
+    goals = yaml.safe_load((MAP_DIR.parent / "config/stations.yaml").read_text())["stations"]
+    dock = goals["charging_dock"]
+    model = ET.SubElement(world, "model", name="amr_charging_station")
+    ET.SubElement(model, "static").text = "true"
+    link = ET.SubElement(model, "link", name="charger")
+    for name, x, y, z, size, color in (
+        ("cabinet", *cabinet_xy, 0.35, "0.25 0.7 0.7", "0.25 0.28 0.28 1"),
+        (
+            "charge_panel",
+            cabinet_xy[0] + 0.135,
+            cabinet_xy[1],
+            0.47,
+            "0.015 0.36 0.22",
+            "0.05 0.65 0.4 1",
+        ),
+        ("dock_pad", dock["x"], dock["y"], 0.013, "0.75 0.75 0.015", "0.1 0.5 0.36 1"),
+    ):
+        visual = ET.SubElement(link, "visual", name=name)
+        ET.SubElement(visual, "pose").text = f"{x} {y} {z} 0 0 0"
+        geometry = ET.SubElement(visual, "geometry")
+        ET.SubElement(ET.SubElement(geometry, "box"), "size").text = size
+        material = ET.SubElement(visual, "material")
+        ET.SubElement(material, "ambient").text = color
+        ET.SubElement(material, "diffuse").text = color
     config = layout_config()["floor"]
     cx, cy = config["center"]
     width, height = config["size"]

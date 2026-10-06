@@ -47,7 +47,11 @@ class NavigationRunner:
         if not self.client.server_is_ready():
             self._status("failed", "Nav2 action server unavailable")
             return
-        self._navigate(task.destination if task.payload_loaded else task.origin)
+        self._navigate(
+            task.destination
+            if task.payload_loaded or task.mission_type == "charge"
+            else task.origin
+        )
 
     def _status(self, status: str, reason: str | None = None, phase: str | None = None):
         payload = {

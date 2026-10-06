@@ -173,6 +173,42 @@ Used by the ROS 2 Gazebo camera inspector. The supervisor accepts the result
 only when `product_id` matches the product currently waiting at the vision
 station.
 
+## AMR Transport And Energy
+
+`GET /api/transport` exposes transport mode, readiness, active task, localized
+robot pose and the supervisor-owned `energy` object. The same energy object is
+included in `GET /api/status` and WebSocket snapshots.
+
+Energy fields include `capacity_wh`, `remaining_wh`, `state_of_charge` (0..1),
+`energy_consumed_wh`, `energy_charged_wh`, `is_charging`, `state`, `reason`,
+`estimated_energy_wh`, `deferred_transport`, reserve/target SOC, `charge_cycles`
+and `charging_seconds`. Units and assumptions are documented in
+[Energy-Aware AMR](ENERGY_AWARE_AMR.md).
+
+`POST /api/transport/heartbeat` is the AMR manager's integration endpoint. In
+addition to `ready` and `robot_pose`, it accepts optional cumulative `motion`:
+
+```json
+{
+  "session_id": "manager-session-id",
+  "sequence": 42,
+  "elapsed_s": 10.0,
+  "distance_m": 2.5,
+  "rotation_rad": 0.7
+}
+```
+
+These fields belong inside the heartbeat's `motion` object. Counters must be
+finite, nonnegative and nondecreasing within a session. Replayed sequence numbers
+do not consume energy twice. The backend computes battery state; callers do not
+set SOC or claim delivery through telemetry.
+
+`POST /api/transport/status` still controls acknowledged transport transitions.
+`mission_type=charge` shares the existing mission authority, does not carry a
+product, and cannot charge until successful navigation is confirmed at the dock.
+Transport event JSON includes estimated and actual mission energy without a
+destructive database schema change.
+
 ## WebSocket
 
 ```text

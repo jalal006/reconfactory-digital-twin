@@ -328,3 +328,13 @@ Ubuntu and covers the browser-mode code used in Docker; container deployment
 itself and GPU/container Nav2 operation need separate verification.
 
 For a concise portfolio recording see [Demo Scenarios](DEMO_SCENARIOS.md).
+
+## Battery-Aware Charging
+
+The named `charging_dock` adds a ninth goal. The normal supervisor now estimates
+mission energy before dispatch and can use its single mission slot for an empty
+Nav2 charger trip. Motion telemetry drives a deterministic Wh model; ROS publishes
+`/reconfactory/amr/battery_state`. Use `AMR_INITIAL_SOC=0.21` with the normal AMR
+launcher to demonstrate gradual charging and resumed production. All 72 directed
+station pairs, including the charger, are checked by `--plan-all`.
+See [energy model, policies and verification](ENERGY_AWARE_AMR.md).

@@ -62,6 +62,10 @@ class TransportRequest:
     replan_state: str | None = None
     cancel_latency_s: float | None = None
     replan_latency_s: float | None = None
+    mission_type: str = "production_transport"
+    estimated_energy_wh: float | None = None
+    energy_start_wh: float = 0.0
+    actual_energy_wh: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -76,10 +80,16 @@ class TransportRequest:
         loaded = data.get("payload_loaded", False)
         if not isinstance(loaded, bool):
             raise ValueError("payload_loaded must be boolean")
+        mission_type = data.get("mission_type", "production_transport")
+        if mission_type not in {"production_transport", "charge"} or (
+            mission_type == "charge" and loaded
+        ):
+            raise ValueError("Invalid mission type or loaded charging mission")
         return cls(
             **{key: data[key] for key in ("task_id", "product_id", "origin", "destination")},
             payload_loaded=loaded,
-            phase="delivery" if loaded else "pickup",
+            phase="delivery" if loaded or mission_type == "charge" else "pickup",
+            mission_type=mission_type,
             **{
                 key: data.get(key)
                 for key in (
@@ -122,7 +132,9 @@ class TransportRequest:
             raise ValueError("Invalid navigation time")
         self.status = status
         self.phase = str(payload.get("phase", self.phase))
-        self.payload_loaded = self.phase == "delivery"
+        self.payload_loaded = (
+            self.phase == "delivery" and self.mission_type == "production_transport"
+        )
         if status == "navigating" and self.started_at is None:
             self.started_at = iso_now()
         if status in TERMINAL:

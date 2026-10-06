@@ -149,3 +149,12 @@ This diagram describes a loaded delivery interrupted by a hard destination fault
 Before pickup, a replacement still needs its pickup leg. Cancellation rejection or
 lost goal ownership blocks automatic replacement. ML risk changes alone do not
 enter this sequence; they only affect the existing scheduler's station selection.
+
+## Energy Admission
+
+The supervisor's `EnergyPolicy` gates new transport authorizations and loaded fault
+replacements. `Battery` consumes cumulative manager odometry deltas in Wh. Charging
+uses the same `FactoryTransport.active` slot and `NavigationRunner` as delivery;
+only dock arrival followed by stationary telemetry enables gradual charging.
+The ROS battery publisher reports backend state rather than running a second model.
+See [energy architecture and limitations](ENERGY_AWARE_AMR.md).

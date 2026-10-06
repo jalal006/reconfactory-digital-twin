@@ -188,3 +188,11 @@ transport durations themselves have not been shortened.
 Integration discovery and recovery experiments run outside the API event loop,
 so slow optional checks do not hold up Start/Pause or WebSocket updates. The Start
 button displays its pending state immediately and prevents duplicate requests.
+
+## AMR Charger
+
+The generated AMR variant adds a fixed cabinet and green ground pad at the named
+`charging_dock`. The original conveyor SDF is unchanged. Both generated occupancy
+maps include the cabinet. Charging uses real Nav2 arrival and stationary odometry,
+not a pose teleport or physical contact plugin. The simulated battery remains
+backend-owned. See [Energy-Aware AMR](ENERGY_AWARE_AMR.md).
