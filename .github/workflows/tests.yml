@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   pytest:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     strategy:
       matrix:
@@ -28,8 +28,9 @@ jobs:
         run: python -m ruff format --check .
       - name: Run tests
         run: python -m pytest
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "22"
+          package-manager-cache: false
       - name: Run browser regression tests
         run: node tests/frontend_movement.test.js
