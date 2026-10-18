@@ -211,6 +211,17 @@ destructive database schema change.
 
 ## WebSocket
 
+AMR snapshots also include `transport.safety`: current supervisory state/reason,
+authorization token, heartbeat age, command inhibition, odometry-confirmed stop,
+fault time, reset requirement and observation freshness. Stale observations become
+`UNAVAILABLE`; they do not claim the robot is stopped.
+
+`POST /api/transport/safety` accepts `{"state": {...}, "events": [...]}` from the
+independent safety node. Transition event IDs are deduplicated and persisted using
+the existing event JSON. This endpoint is observation-only: it cannot authorize
+motion or reset the ROS latch. Reset is the explicit ROS Trigger service described
+in [AMR Safety Supervisor](AMR_SAFETY_SUPERVISOR.md).
+
 ```text
 ws://127.0.0.1:8000/ws
 ```

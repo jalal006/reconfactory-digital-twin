@@ -146,11 +146,24 @@ function runFrontendMovementTests(source) {
         reason: "Inspect <payload>"
       }});
       assert(banner.hidden && energyBanner.textContent.includes("CRITICAL ENERGY"), "Logical mode exposes energy without ROS banner");
+      renderTransport({transport_mode: "amr", transport: {safety: {
+        fresh: true, safety_state: "FAULT_LATCHED", safety_reason: "Manager heartbeat timeout",
+        command_inhibited: true, robot_stopped_confirmed: false, reset_required: true
+      }}});
+      const safetyBanner = document.getElementById("safetyState");
+      assert(!safetyBanner.hidden && safetyBanner.textContent.includes("FAULT LATCHED"), "Show independent safety fault");
+      assert(safetyBanner.textContent.includes("Stopped: Not confirmed") && safetyBanner.textContent.includes("Operator reset required"), "Zero commands must not imply physical stopping");
+      renderTransport({transport_mode: "amr", transport: {safety: {
+        fresh: false, safety_state: "DISARMED", robot_stopped_confirmed: true
+      }}});
+      assert(safetyBanner.textContent.includes("UNAVAILABLE") && !safetyBanner.textContent.includes("Stopped: Confirmed"), "Stale safety telemetry cannot claim stopped");
+      renderTransport({transport_mode: "simulated"});
+      assert(safetyBanner.hidden, "Browser-only operation needs no ROS safety status");
     `,
   );
   run(document, { addEventListener() {} }, () => new Promise(() => {}), () => 1,
     { now: () => clock.now }, clock);
-  return "9 browser movement, 1 health-card, 2 replanning-banner and 2 energy-banner scenarios passed";
+  return "9 browser movement, 1 health-card, 2 replanning-banner, 2 energy-banner and 3 safety-banner scenarios passed";
 }
 
 if (typeof require === "function") {

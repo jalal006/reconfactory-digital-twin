@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import uuid4
 
 import yaml
 
@@ -37,6 +39,12 @@ class MotionTrace:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--goals", nargs="*", default=[])
+    parser.add_argument("--unsafe-baseline", action="store_true")
+    parser.add_argument(
+        "--diagnostic-lease",
+        action="store_true",
+        help="Explicit isolated diagnostic authorization; manager must be disabled",
+    )
     parser.add_argument(
         "--plan-all",
         action="store_true",
@@ -48,15 +56,19 @@ def main():
         "--manual-drive", action="store_true", help="Use only with enable_nav2:=false"
     )
     args = parser.parse_args()
+    if (args.goals or args.manual_drive) and not args.diagnostic_lease:
+        parser.error("Motion diagnostics require --diagnostic-lease and a disabled AMR manager")
     import rclpy
     from geometry_msgs.msg import Twist
     from nav2_msgs.action import ComputePathToPose, NavigateToPose
     from nav_msgs.msg import Odometry
     from rclpy.action import ActionClient
+    from rclpy.clock import Clock, ClockType
     from rclpy.parameter import Parameter
-    from rclpy.qos import qos_profile_sensor_data
+    from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
     from rclpy.time import Time
     from sensor_msgs.msg import BatteryState, LaserScan
+    from std_msgs.msg import String
     from tf2_ros import Buffer, TransformException, TransformListener
 
     from reconfactory.transport import load_station_goals
@@ -71,6 +83,37 @@ def main():
         "reconfactory_amr_verifier", parameter_overrides=[Parameter("use_sim_time", value=True)]
     )
     samples = {}
+    diagnostic_enabled = False
+    diagnostic = {
+        "mode": "DISARMED",
+        "sequence": 0,
+        "session_id": uuid4().hex,
+        "task_id": None,
+        "mission_type": "diagnostic",
+        "reset_eligible": False,
+    }
+    lease_pub = (
+        node.create_publisher(String, "/reconfactory/amr/safety/lease", 1)
+        if args.diagnostic_lease
+        else None
+    )
+
+    def publish_lease():
+        if not diagnostic_enabled:
+            return
+        diagnostic["sequence"] += 1
+        lease_pub.publish(String(data=json.dumps(diagnostic)))
+
+    def arm():
+        assert wait(gate_ready, 5), (
+            "Safety gate lacks fresh odometry or requires operator reset"
+        )
+        diagnostic["mode"] = "CONTROLLED_HOLD"
+        publish_lease()
+        diagnostic.update(mode="AUTHORIZED", task_id="diagnostic-" + uuid4().hex)
+
+    if lease_pub:
+        node.create_timer(0.1, publish_lease, clock=Clock(clock_type=ClockType.STEADY_TIME))
     motion = MotionTrace()
 
     def odometry(msg):
@@ -94,6 +137,12 @@ def main():
         10,
     )
     node.create_subscription(Twist, "/cmd_vel", lambda msg: samples.update(command=msg), 10)
+    node.create_subscription(
+        String,
+        "/reconfactory/amr/safety/state",
+        lambda msg: samples.update(safety=json.loads(msg.data), safety_at=time.monotonic()),
+        QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL),
+    )
     node.create_subscription(
         Twist, "/cmd_vel_nav", lambda msg: samples.update(raw_command=msg), 10
     )
@@ -136,6 +185,14 @@ def main():
         except TransformException:
             return False
 
+    def gate_ready():
+        state = samples.get("safety", {})
+        return (
+            state.get("odometry_fresh") is True
+            and state.get("safety_state") in {"DISARMED", "AUTHORIZED", "CONTROLLED_HOLD"}
+            and time.monotonic() - samples.get("safety_at", 0) < 0.5
+        )
+
     try:
         assert wait(
             lambda: "scan" in samples and "odom" in samples and transform_ready(), args.timeout
@@ -144,8 +201,29 @@ def main():
             "No finite LiDAR returns"
         )
         print("PASS: live LiDAR, odometry and TF", flush=True)
+        if lease_pub:
+            assert "reconfactory_amr_manager" not in node.get_node_names(), (
+                "Disable manager before diagnostic leases"
+            )
+            diagnostic_enabled = True
+        expected_publisher = (
+            "velocity_smoother" if args.unsafe_baseline else "reconfactory_amr_safety"
+        )
+        assert wait(
+            lambda: (
+                [p.node_name for p in node.get_publishers_info_by_topic("/cmd_vel")]
+                == [expected_publisher]
+            ),
+            5,
+        ), (
+            f"Unexpected final cmd_vel publishers: {node.get_publishers_info_by_topic('/cmd_vel')}"
+        )
+        print(f"PASS: sole final cmd_vel publisher is {expected_publisher}", flush=True)
+        if not args.unsafe_baseline:
+            assert wait(gate_ready, 15), "Safety gate has no fresh odometry or is fault-latched"
         if args.manual_drive:
-            pub = node.create_publisher(Twist, "/cmd_vel", 10)
+            pub = node.create_publisher(Twist, "/reconfactory/amr/nav_cmd_vel", 1)
+            arm()
             before = samples["odom"].pose.pose.position
             command = Twist()
             command.linear.x = 0.1
@@ -181,9 +259,10 @@ def main():
         else:
             assert wait(client.server_is_ready, args.timeout), "NavigateToPose unavailable"
             print("PASS: NavigateToPose action server", flush=True)
-            assert wait(lambda: "battery" in samples, 15), "BatteryState unavailable"
-            assert 0 <= samples["battery"].percentage <= 1 and samples["battery"].present
-            print("PASS: standard BatteryState publishes modeled SOC", flush=True)
+            if not lease_pub:
+                assert wait(lambda: "battery" in samples, 15), "BatteryState unavailable"
+                assert 0 <= samples["battery"].percentage <= 1 and samples["battery"].present
+                print("PASS: standard BatteryState publishes modeled SOC", flush=True)
         if args.plan_all:
             planner = ActionClient(node, ComputePathToPose, "/compute_path_to_pose")
             assert wait(planner.server_is_ready, args.timeout), "Planner action unavailable"
@@ -259,6 +338,7 @@ def main():
             assert wait(response.done, 10), "Nav2 did not acknowledge goal"
             handle = response.result()
             assert handle.accepted, f"Goal {name} rejected"
+            arm()
             result = handle.get_result_async()
             deadline = time.monotonic() + args.timeout
             while not result.done() and time.monotonic() < deadline:
@@ -295,6 +375,10 @@ def main():
                 flush=True,
             )
     finally:
+        if lease_pub:
+            diagnostic["mode"] = "DISARMED"
+            publish_lease()
+            rclpy.spin_once(node, timeout_sec=0.1)
         del listener
         node.destroy_node()
         rclpy.shutdown()

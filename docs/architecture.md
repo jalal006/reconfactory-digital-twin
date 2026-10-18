@@ -158,3 +158,18 @@ uses the same `FactoryTransport.active` slot and `NavigationRunner` as delivery;
 only dock arrival followed by stationary telemetry enables gradual charging.
 The ROS battery publisher reports backend state rather than running a second model.
 See [energy architecture and limitations](ENERGY_AWARE_AMR.md).
+
+## Independent Motion Supervision
+
+The AMR manager grants short-lived mission leases, but a separate ROS process
+owns the final velocity gate. Nav2's smoother publishes
+`/reconfactory/amr/nav_cmd_vel`; `/reconfactory_amr_safety` alone normally publishes
+`/cmd_vel`. Local monotonic watchdogs, fresh odometry and explicit fault reset do
+not depend on backend callbacks. HTTP/SQLite reporting runs in a background worker
+and only updates observational `transport.safety` state.
+
+Production authority, delivery acknowledgement and payload ownership remain in
+their existing components. Planned cancellation inhibits motion without latching;
+unexpected loss latches and cannot be cleared by manager restart. Gate-process
+death itself has no independently enforced actuator timeout. See
+[policy, verification and limitations](AMR_SAFETY_SUPERVISOR.md).

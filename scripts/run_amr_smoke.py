@@ -21,7 +21,17 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--goal-timeout", type=float, default=100.0)
+    parser.add_argument(
+        "--unsafe-baseline",
+        action="store_true",
+        help="Isolated manager-restart comparison ONLY, without the new gate",
+    )
     mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--safety",
+        choices=["manager-crash", "backend-outage", "gate-crash"],
+        help="Independent gate failure injection and controlled reset verification",
+    )
     mode.add_argument(
         "--energy", action="store_true", help="Low-SOC charging then real production delivery"
     )
@@ -53,6 +63,8 @@ def main():
         help="Verify pickup, delivery and real camera inspection, then stop",
     )
     args = parser.parse_args()
+    if args.unsafe_baseline and args.resilience != "manager-restart":
+        parser.error("--unsafe-baseline requires --resilience manager-restart")
     if not math.isfinite(args.goal_timeout) or args.goal_timeout <= 0:
         parser.error("--goal-timeout must be finite and positive")
     if sys.platform != "linux":
@@ -75,8 +87,12 @@ def main():
     }
     if args.manual_drive:
         env["RECONFACTORY_AMR_NAV2"] = "false"
+    if args.manual_drive or args.navigation_only:
+        env["RECONFACTORY_AMR_MANAGER"] = "false"
     if args.energy:
         env["AMR_INITIAL_SOC"] = "0.21"
+    if args.unsafe_baseline:
+        env["RECONFACTORY_TEST_UNGATED"] = "true"
     url = f"http://127.0.0.1:{port}"
     energy_node = None
     battery_samples = deque(maxlen=4000)
@@ -106,7 +122,11 @@ def main():
                 if process.poll() is not None:
                     raise RuntimeError("Launcher exited; inspect launcher.log")
                 try:
-                    if http("/api/transport").get("ready") or args.manual_drive:
+                    if (
+                        http("/api/transport").get("ready")
+                        or args.manual_drive
+                        or args.navigation_only
+                    ):
                         break
                 except OSError:
                     pass
@@ -119,6 +139,7 @@ def main():
                         "/usr/bin/python3",
                         "scripts/check_amr_pipeline.py",
                         "--manual-drive",
+                        "--diagnostic-lease",
                         "--timeout",
                         "120",
                     ],
@@ -128,20 +149,14 @@ def main():
                     timeout=140,
                 )
                 return
-            goals = args.navigation_only or (
-                []
-                if args.vision_only
-                or args.factory_only
-                or args.fault_replan
-                or args.resilience
-                or args.energy
-                else ["home", "input_queue", "vision"]
-            )
+            goals = args.navigation_only or []
             subprocess.run(
                 [
                     "/usr/bin/python3",
                     "scripts/check_amr_pipeline.py",
                     "--plan-all",
+                    *(["--unsafe-baseline"] if args.unsafe_baseline else []),
+                    *(["--diagnostic-lease"] if args.navigation_only else []),
                     "--goals",
                     *goals,
                     "--timeout",
@@ -153,6 +168,24 @@ def main():
                 timeout=60 + args.goal_timeout * (len(goals) + 1),
             )
             if args.navigation_only:
+                return
+            if args.safety:
+                subprocess.run(
+                    [
+                        "/usr/bin/python3",
+                        "scripts/check_amr_safety.py",
+                        "--url",
+                        url,
+                        "--group",
+                        str(process.pid),
+                        "--scenario",
+                        args.safety,
+                    ],
+                    cwd=ROOT,
+                    env=env,
+                    check=True,
+                    timeout=240,
+                )
                 return
             if args.resilience:
                 subprocess.run(

@@ -9,4 +9,6 @@ source install/setup.bash
 exec ros2 launch reconfactory_amr amr_navigation.launch.py \
   project_root:="${ROOT}" \
   enable_nav2:="${RECONFACTORY_AMR_NAV2:-true}" \
+  enable_manager:="${RECONFACTORY_AMR_MANAGER:-true}" \
+  unsafe_baseline:="${RECONFACTORY_TEST_UNGATED:-false}" \
   backend_url:="${RECONFACTORY_BACKEND_URL:-http://127.0.0.1:8000}"

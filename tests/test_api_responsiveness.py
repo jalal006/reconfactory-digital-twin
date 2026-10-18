@@ -48,3 +48,35 @@ def test_start_responds_while_optional_operation_is_waiting(monkeypatch, operati
             await pending
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("mode", ["amr", "simulated"])
+def test_safety_api_is_observation_only_and_optional(monkeypatch, mode):
+    from fastapi import HTTPException
+
+    from reconfactory.amr_safety import MotionSafety
+
+    factory = reconfactory.FactorySupervisor(
+        transport_mode=mode, enable_database=False, maintenance_mode="rules"
+    )
+    monkeypatch.setattr(reconfactory, "FactorySupervisor", lambda **_: factory)
+    spec = importlib.util.spec_from_file_location(
+        "test_safety_api", Path(__file__).resolve().parents[1] / "app" / "main.py"
+    )
+    backend = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, backend)
+    spec.loader.exec_module(backend)
+    payload = backend.SafetyObservation(state=MotionSafety().snapshot(), events=[])
+    if mode == "simulated":
+        with pytest.raises(HTTPException) as error:
+            asyncio.run(backend.transport_safety(payload))
+        assert error.value.status_code == 409
+        return
+    assert asyncio.run(backend.transport_safety(payload)) == {"ok": True}
+    assert factory.snapshot()["transport"]["safety"]["safety_state"] == "DISARMED"
+    assert not factory.running and factory.transport.active is None
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            backend.transport_safety(backend.SafetyObservation(state={"safety_state": "bad"}))
+        )
+    assert error.value.status_code == 400

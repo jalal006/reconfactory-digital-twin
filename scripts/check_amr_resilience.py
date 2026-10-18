@@ -71,6 +71,7 @@ def main():
     )
     args = parser.parse_args()
     import rclpy
+    from geometry_msgs.msg import Twist
     from nav_msgs.msg import Odometry
     from rclpy.qos import qos_profile_sensor_data
 
@@ -96,6 +97,13 @@ def main():
         )
 
     node.create_subscription(Odometry, "/odom", odometry, qos_profile_sensor_data)
+
+    def command(msg):
+        samples.update(
+            command_at=time.monotonic(), command=math.hypot(msg.linear.x, msg.angular.z)
+        )
+
+    node.create_subscription(Twist, "/cmd_vel", command, 1)
     replacement = None
     suspended = None
     log = None
@@ -105,7 +113,10 @@ def main():
         deadline = time.monotonic() + 100
         while time.monotonic() < deadline:
             rclpy.spin_once(node, timeout_sec=0.05)
-            state = http("/api/status")
+            try:
+                state = http("/api/status")
+            except TimeoutError:
+                continue
             task = state["transport"].get("active_task") or {}
             pose = state["transport"].get("robot_pose") or {}
             if (
@@ -119,6 +130,7 @@ def main():
         else:
             raise RuntimeError("Did not observe loaded robot moving toward A")
         task_id = task["task_id"]
+        initial_speed = samples["speed"]
         start = time.monotonic()
         print(f"Injecting {args.scenario} while loaded and moving: {task_id}", flush=True)
         if args.scenario == "backend-outage":
@@ -142,12 +154,15 @@ def main():
                 start_new_session=True,
             )
         stopped_since = None
+        inhibited_at = None
         stopped_at = None
         terminal_at = None
         deadline = start + 25
         while time.monotonic() < deadline:
             rclpy.spin_once(node, timeout_sec=0.05)
             now = time.monotonic()
+            if samples.get("command_at", 0) > start and samples.get("command", 1) < 1e-8:
+                inhibited_at = inhibited_at or now
             if replacement and replacement.poll() is not None:
                 raise RuntimeError(
                     "Restarted manager exited during verification; inspect restarted_manager.log"
@@ -158,7 +173,7 @@ def main():
                 and samples.get("angular", 1) < 0.05
             ):
                 stopped_since = stopped_since or now
-                if now - stopped_since >= 0.5:
+                if now - stopped_since >= 0.3:
                     stopped_at = stopped_at or now
             else:
                 stopped_since = None
@@ -169,7 +184,10 @@ def main():
                     continue
                 os.kill(suspended, signal.SIGCONT)
                 suspended = None
-            state = http("/api/status")
+            try:
+                state = http("/api/status")
+            except TimeoutError:
+                continue
             active = state["transport"].get("active_task") or {}
             current = next(
                 p for p in state["products"] if p["product_id"] == product["product_id"]
@@ -186,6 +204,10 @@ def main():
                     assert locations.get(product["product_id"]) == "amr_payload", locations
                     result = {
                         "scenario": args.scenario,
+                        "initial_speed": initial_speed,
+                        "command_inhibition_s": inhibited_at - start if inhibited_at else None,
+                        "manager_restart_required_for_stop": args.scenario == "manager-restart",
+                        "unsafe_baseline": os.getenv("RECONFACTORY_TEST_UNGATED") == "true",
                         "task_id": task_id,
                         "stop_latency_s": stopped_at - start,
                         "terminal_latency_s": terminal_at - start,

@@ -992,6 +992,7 @@ class FactorySupervisor:
         source: str,
         severity: Severity = Severity.INFO,
         data: dict[str, Any] | None = None,
+        event_id: str | None = None,
     ) -> FactoryEvent:
         event = FactoryEvent(
             event_type=event_type,
@@ -1000,6 +1001,8 @@ class FactorySupervisor:
             source=source,
             data=data or {},
         )
+        if event_id is not None:
+            event.event_id = event_id
         self.events.append(event)
         if self.logger:
             self.logger.log_event(event)

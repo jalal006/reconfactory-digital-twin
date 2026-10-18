@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .energy import distance, leg_energy
-from .models import Product, ProductStatus, Severity
+from .models import MachineState, Product, ProductStatus, Severity
 from .transport import TERMINAL, TransportRequest, load_station_goals, task_timeout_s
 
 if TYPE_CHECKING:
@@ -33,6 +33,60 @@ class FactoryTransport:
         self.motion_sequence = -1
         self.motion_totals = (0.0, 0.0, 0.0)
         self.retired_motion_sessions: set[str] = set()
+        self.safety_state = None
+        self.safety_received_at = 0.0
+        self.safety_events: dict[str, bool] = {}
+
+    def observe_safety(self, state: dict, events: list[dict]) -> None:
+        from .amr_safety import STATES
+
+        if (
+            not isinstance(state.get("safety_state"), str)
+            or state["safety_state"] not in STATES
+        ):
+            raise ValueError("Invalid safety state")
+        for event in events:
+            if (
+                not isinstance(event.get("event_id"), str)
+                or not event["event_id"]
+                or not isinstance(event.get("event_type"), str)
+                or not event["event_type"].startswith("amr_safety_")
+            ):
+                raise ValueError("Invalid safety event")
+        self.safety_state = dict(state)
+        self.safety_received_at = time.monotonic()
+        for event in events:
+            event_id = event.get("event_id")
+            kind = event.get("event_type", "")
+            if event_id in self.safety_events:
+                continue
+            self.factory._emit(
+                kind,
+                event.get("reason") or kind.replace("_", " "),
+                source="amr_safety",
+                severity=Severity.WARNING
+                if "fault" in kind or "rejected" in kind
+                else Severity.INFO,
+                data=event,
+                event_id=f"AMR-SAFETY-{event_id}",
+            )
+            self.safety_events[event_id] = True
+            if len(self.safety_events) > 2048:
+                self.safety_events.pop(next(iter(self.safety_events)))
+
+    def safety_snapshot(self):
+        data = dict(self.safety_state or {})
+        fresh = bool(data) and time.monotonic() - self.safety_received_at < 1.5
+        data["fresh"] = fresh
+        if not fresh:
+            data.update(
+                safety_state="UNAVAILABLE",
+                safety_reason="No fresh safety observation",
+                command_inhibited=None,
+                robot_stopped_confirmed=False,
+                odometry_fresh=False,
+            )
+        return data
 
     def heartbeat(
         self, ready: bool, pose: dict | None = None, motion: dict | None = None
@@ -140,6 +194,10 @@ class FactoryTransport:
             "active_task": self.active.to_dict() if self.active else None,
             "robot_pose": self.robot_pose,
             "energy": self.factory.energy.snapshot(),
+            "safety": self.safety_snapshot(),
+            "emergency_active": any(
+                s.state == MachineState.EMERGENCY_STOP for s in self.factory.stations.values()
+            ),
         }
 
     def cancel(self) -> None:

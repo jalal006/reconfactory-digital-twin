@@ -15,12 +15,17 @@ from uuid import uuid4
 
 def main(args=None):
     import rclpy
-    from action_msgs.msg import GoalStatus  # noqa: F401
+    from action_msgs.msg import (
+        GoalStatus,  # noqa: F401
+        GoalStatusArray,
+    )
     from action_msgs.srv import CancelGoal
     from nav2_msgs.action import NavigateToPose
     from nav_msgs.msg import Odometry
     from rclpy.action import ActionClient
+    from rclpy.clock import Clock, ClockType
     from rclpy.node import Node
+    from rclpy.qos import DurabilityPolicy, QoSProfile
     from rclpy.time import Time
     from sensor_msgs.msg import BatteryState
     from std_msgs.msg import String
@@ -32,6 +37,13 @@ def main(args=None):
             self.declare_parameter("project_root", os.getenv("RECONFACTORY_PROJECT_ROOT", ""))
             self.declare_parameter("backend_url", "http://127.0.0.1:8000")
             self.declare_parameter("stations_file", "")
+            self.declare_parameter("require_safety", True)
+            self.require_safety = self.get_parameter("require_safety").value
+            if not self.require_safety and not (
+                os.getenv("ROS_DOMAIN_ID") == "73"
+                and os.getenv("GZ_PARTITION", "").startswith("reconfactory_test_")
+            ):
+                raise RuntimeError("Ungated manager is restricted to isolated tests")
             root = self.get_parameter("project_root").value
             if root:
                 sys.path.insert(0, root)
@@ -61,6 +73,28 @@ def main(args=None):
                 "rotation_rad": 0.0,
             }
             self.last_odom_stamp = None
+            self.backend_state = None
+            self.backend_checked_at = 0.0
+            self.lease_sequence = 0
+            self.lease_token = None
+            self.safety_state = "UNAVAILABLE"
+            self.safety_odometry_fresh = False
+            self.safety_at = 0.0
+            self.nav_status_seen = False
+            self.nav_active = True
+            self.lease_pub = self.create_publisher(String, "/reconfactory/amr/safety/lease", 1)
+            self.create_subscription(
+                String,
+                "/reconfactory/amr/safety/state",
+                self.safety,
+                QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL),
+            )
+            self.create_subscription(
+                GoalStatusArray,
+                "/navigate_to_pose/_action/status",
+                self.nav_status,
+                QoSProfile(depth=10, durability=DurabilityPolicy.TRANSIENT_LOCAL),
+            )
             self.battery_publisher = self.create_publisher(
                 BatteryState, "/reconfactory/amr/battery_state", 10
             )
@@ -72,8 +106,100 @@ def main(args=None):
             self.tf = Buffer()
             self.listener = TransformListener(self.tf, self)
             self.create_timer(0.25, self.poll)
+            self.create_timer(0.1, self.lease, clock=Clock(clock_type=ClockType.STEADY_TIME))
+
+        def safety(self, msg):
+            try:
+                state = json.loads(msg.data)
+                self.safety_state = state["safety_state"]
+                self.safety_odometry_fresh = state.get("odometry_fresh") is True
+                self.safety_at = time.monotonic()
+            except (KeyError, ValueError, TypeError):
+                self.safety_state = "UNAVAILABLE"
+                self.safety_odometry_fresh = False
+
+        def nav_status(self, msg):
+            self.nav_status_seen = True
+            self.nav_active = any(s.status in {1, 2, 3} for s in msg.status_list)
+
+        def safety_available(self):
+            return not self.require_safety or (
+                self.safety_state in {"DISARMED", "AUTHORIZED", "CONTROLLED_HOLD"}
+                and self.safety_odometry_fresh
+                and time.monotonic() - self.safety_at < 1.0
+            )
+
+        def send_lease(self, mode, token=None, eligible=False, reason=""):
+            self.lease_sequence += 1
+            task = self.runner.task
+            self.lease_pub.publish(
+                String(
+                    data=json.dumps(
+                        {
+                            "session_id": self.motion["session_id"],
+                            "sequence": self.lease_sequence,
+                            "mode": mode,
+                            "task_id": token,
+                            "mission_type": task.mission_type if task else None,
+                            "reset_eligible": eligible,
+                            "reason": reason,
+                        }
+                    )
+                )
+            )
+
+        def lease(self):
+            state = self.backend_state or {}
+            active, task = state.get("active_task") or {}, self.runner.task
+            fresh = time.monotonic() - self.backend_checked_at < 0.6
+            if not fresh:
+                self.send_lease(
+                    "FAULT_LATCHED" if self.lease_token else "DISARMED",
+                    reason="Backend authorization is stale",
+                )
+                return
+            eligible = (
+                not state.get("running")
+                and not state.get("emergency_active")
+                and not active
+                and not self.runner.uncertain
+                and self.nav_status_seen
+                and not self.nav_active
+                and self.stopped()
+                and (not task or task.status in {"delivered", "failed", "cancelled"})
+            )
+            authorized = (
+                task
+                and task.status == "navigating"
+                and not task.cancel_requested
+                and state.get("running")
+                and not state.get("emergency_active")
+                and active.get("task_id") == task.task_id
+                and not active.get("cancel_requested")
+                and active.get("status") not in {"failed", "cancelled", "delivered"}
+                and not self.runner.uncertain
+                and self.safety_available()
+            )
+            if authorized:
+                token = f"{task.task_id}:{task.phase}:{self.runner.generation}"
+                if self.lease_token != token:
+                    self.send_lease(
+                        "CONTROLLED_HOLD",
+                        reason="New navigation generation; discard old commands",
+                    )
+                    self.lease_token = token
+                else:
+                    self.send_lease("AUTHORIZED", token)
+            else:
+                self.send_lease(
+                    "DISARMED" if eligible or not active else "CONTROLLED_HOLD",
+                    eligible=eligible,
+                    reason="Navigation intentionally inhibited",
+                )
 
         def odometry(self, msg):
+            if time.monotonic() - self.odom_at >= 0.5:
+                self.stopped_since = None
             self.odom_at = time.monotonic()
             velocity = msg.twist.twist
             stamp = msg.header.stamp.sec + msg.header.stamp.nanosec / 1e9
@@ -126,6 +252,7 @@ def main(args=None):
                 return json.load(response)
 
         def report(self, payload):
+            self.send_lease("CONTROLLED_HOLD", reason="Navigation phase/status transition")
             self.publisher.publish(String(data=json.dumps(payload)))
             if self.backend:
                 self.outbox.append(payload)
@@ -140,6 +267,8 @@ def main(args=None):
                     return
                 # In production only the supervisor can authorize a task.
                 if self.backend:
+                    if not self.safety_available():
+                        raise ValueError("Independent safety gate is latched or unavailable")
                     state = self.http("/api/transport")
                     active = state.get("active_task") or {}
                     if not state.get("running") or active.get("cancel_requested"):
@@ -193,6 +322,7 @@ def main(args=None):
                 return
             try:
                 state = self.http("/api/transport")
+                self.backend_state, self.backend_checked_at = state, time.monotonic()
                 active = state.get("active_task") or {}
                 if state.get("energy"):
                     from reconfactory.energy import battery_ros_fields
@@ -214,6 +344,17 @@ def main(args=None):
                         self.orphan_detected = True
                 task = self.runner.task
                 if (
+                    not active
+                    and not state.get("running")
+                    and self.nav_status_seen
+                    and not self.nav_active
+                    and self.stopped()
+                    and (not task or task.status in {"delivered", "failed", "cancelled"})
+                ):
+                    self.runner.uncertain = False
+                    self.orphan_detected = False
+                    self.orphan_cancel_sent = False
+                if (
                     task
                     and active.get("task_id") == task.task_id
                     and active.get("cancel_requested")
@@ -226,7 +367,8 @@ def main(args=None):
                     ):
                         setattr(task, key, active.get(key))
                 if task and (
-                    not state.get("running")
+                    not self.safety_available()
+                    or not state.get("running")
                     or active.get("task_id") != task.task_id
                     or active.get("cancel_requested")
                     or active.get("status") in {"failed", "cancelled"}
@@ -254,6 +396,7 @@ def main(args=None):
                         "ready": self.client.server_is_ready()
                         and pose is not None
                         and not busy
+                        and self.safety_available()
                         and not self.runner.uncertain,
                         "robot_pose": pose,
                         "motion": self.motion,
@@ -264,6 +407,7 @@ def main(args=None):
                     and not active.get("cancel_requested")
                     and state.get("running")
                     and not self.runner.uncertain
+                    and self.safety_available()
                 ):
                     if active["task_id"] not in self.runner.registry.seen:
                         self.tasks.publish(String(data=json.dumps(active)))
@@ -305,6 +449,11 @@ def main(args=None):
                         },
                     )
             except Exception as exc:
+                self.backend_checked_at = 0.0
+                self.send_lease(
+                    "FAULT_LATCHED" if self.lease_token else "DISARMED",
+                    reason="Backend communication failed",
+                )
                 self.runner.cancel()
                 self.get_logger().warning(
                     f"AMR backend unavailable: {exc}", throttle_duration_sec=5.0

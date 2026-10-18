@@ -102,6 +102,11 @@ class TransportHeartbeat(BaseModel):
     motion: MotionCounters | None = None
 
 
+class SafetyObservation(BaseModel):
+    state: dict[str, Any]
+    events: list[dict[str, Any]] = Field(default_factory=list, max_length=256)
+
+
 class TransportStatusRequest(BaseModel):
     task_id: str
     product_id: str
@@ -214,6 +219,17 @@ async def transport_status(payload: TransportStatusRequest) -> dict[str, bool]:
         supervisor.transport.receive(payload.model_dump())
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
+    return {"ok": True}
+
+
+@app.post("/api/transport/safety")
+async def transport_safety(payload: SafetyObservation) -> dict[str, bool]:
+    if not supervisor.transport:
+        raise HTTPException(409, "AMR mode is disabled")
+    try:
+        supervisor.transport.observe_safety(payload.state, payload.events)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     return {"ok": True}
 
 

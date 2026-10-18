@@ -72,7 +72,8 @@ Waiting does not produce a per-tick event flood.
 - Rejected/failed cancellation, lost result/goal handle, or manager restart:
   fail closed. A restarted manager requests cancellation of orphan navigation
   on this **single-robot** action server, but does not claim acknowledged delivery
-  or safe automatic resumption. Stop the stack, inspect payload, restart/reset.
+  or safe automatic resumption. Inspect payload and reconcile/reset ownership.
+  The independent gate also requires explicit reset after unexpected loss.
 - Pause, emergency stop and arbitrary navigation failures are not automatic
   fault replans. The previous held-payload behavior remains.
 - No persistent mission restoration across backend restart. No physical gripper,
@@ -186,7 +187,8 @@ to descendants of its isolated test launcher with the test ROS domain/Gazebo
 partition. It resumes a suspended backend and stops its replacement manager in
 cleanup. Process-selection safeguards also have ROS-free unit tests.
 
-The three-second backend suspension passed: stopped odometry was confirmed after
+Historical checks before the independent gate: the three-second backend suspension
+passed; stopped odometry was confirmed after
 2.04 seconds, the cancellation reached the supervisor after 3.11 seconds, and a
 further three-second stationary hold produced no extra mission or false delivery.
 This is a temporary outage test, not restoration after loss of backend memory.
@@ -201,9 +203,10 @@ The second run explicitly checked manager liveness throughout the hold, Gazebo's
 
 An earlier run logged an rclpy subscription traceback around cleanup; it did not
 recur in the repeat with explicit liveness checks. This remains an observed
-intermittent shutdown issue, not a claimed fix. Crash-stop latency is also a real
-limitation: stopping relies on a restarted manager discovering and cancelling the
-orphan goal. This is **not an independent or immediate emergency-stop watchdog**.
+intermittent shutdown issue, not a claimed fix. In that historical implementation,
+stopping relied on a restarted manager discovering and cancelling the orphan goal.
+The new [independent command gate](AMR_SAFETY_SUPERVISOR.md) removes that dependency
+while alive; its documentation records new trials and gate-process-death limits.
 Persistent backend restart, prolonged outages, and an absent manager that never
 restarts remain outside these runtime checks.
 
@@ -216,6 +219,15 @@ RViz is installed, but an attempted offscreen render failed with OGRE/GLX
 desktop checklist passed; the offscreen failure remains an automated-rendering
 limitation, not evidence that normal desktop RViz is broken.
 No physical robot, hardware safety, or gripper behavior has been validated.
+
+## Independent Command Gate
+
+Intentional destination cancellation sends a CONTROLLED_HOLD lease while the
+existing action cancellation/stopped handshake runs. Replacement task and phase
+generations get new authorization tokens; neither old commands nor old task
+leases carry over. Unexpected manager/backend loss latches instead and cannot
+resume through automatic replanning or manager restart. The independent gate does
+not choose destinations, detach payloads or report successful delivery.
 Cancellation rejection/failure is tested with mocked action futures, not forced
 against a faulty real Nav2 server.
 

@@ -13,7 +13,7 @@ FactorySupervisor (product, recipe, fault and quality authority)
   -> /reconfactory/amr/task (JSON String)
   -> /reconfactory_amr_manager
   -> NavigateToPose: origin, then destination
-  -> Nav2 -> /cmd_vel -> Gazebo differential-drive AMR
+  -> Nav2 -> velocity smoother -> independent safety gate -> /cmd_vel -> Gazebo AMR
   <- /scan + /odom + TF
   -> /reconfactory/amr/status (JSON String)
   -> POST /api/transport/status
@@ -26,8 +26,9 @@ The manager is a transport executor, not a second production scheduler. It
 polls the authoritative task at 4 Hz, validates topic tasks against that task,
 and reports each state transition once. HTTP retries preserve transition order;
 duplicate task IDs and duplicate/stale statuses cannot cause another delivery.
-In standalone mode (`backend_url:=''`) topic tasks are accepted without a backend.
-Do not run standalone alongside production supervision.
+Production authorization requires a fresh backend task. Empty-backend standalone
+tasks cannot authorize the safety gate. Isolated navigation diagnostics disable
+the production manager and issue explicit diagnostic leases instead.
 
 The supervisor allows one active transport. It reserves a compatible, unoccupied
 station using the existing scheduler. Products remain `in_transit` at their last
@@ -60,7 +61,8 @@ Initial AMCL pose comes from the same `home` config as the robot spawn pose.
 |---|---|
 | `/scan` | `sensor_msgs/LaserScan`, Gazebo GPU LiDAR through robot bridge |
 | `/odom` | `nav_msgs/Odometry`, Gazebo wheel odometry through robot bridge |
-| `/cmd_vel` | `geometry_msgs/Twist`, Nav2 velocity smoother to DiffDrive |
+| `/reconfactory/amr/nav_cmd_vel` | `geometry_msgs/Twist`, smoother to independent gate |
+| `/cmd_vel` | `geometry_msgs/Twist`, independent gate to DiffDrive bridge |
 | `/tf`, `/tf_static` | AMCL, DiffDrive bridge, robot_state_publisher |
 | `/joint_states` | `sensor_msgs/JointState`, Gazebo wheel joints |
 | `/clock` | `rosgraph_msgs/Clock`, Gazebo; all navigation nodes use sim time |
@@ -210,10 +212,11 @@ python3 scripts/check_amr_pipeline.py
 ros2 topic echo /reconfactory/amr/status
 ```
 
-Before starting production, verify three named destinations with real Nav2 goals:
+With the normal stack stopped, verify three named destinations using the isolated
+launcher. It disables the production manager and grants diagnostic leases:
 
 ```bash
-python3 scripts/check_amr_pipeline.py --plan-all --goals home input_queue vision --timeout 100
+python3 scripts/run_amr_smoke.py --navigation-only home input_queue vision --goal-timeout 100
 ```
 
 The verifier checks finite LiDAR returns, odometry, a complete TF chain, the
@@ -259,11 +262,14 @@ Terminal 2:
 ```bash
 source /opt/ros/jazzy/setup.bash
 source ros2_ws/install/setup.bash
-ros2 launch reconfactory_amr amr_navigation.launch.py enable_nav2:=false
+ros2 launch reconfactory_amr amr_navigation.launch.py \
+  project_root:="$PWD" enable_nav2:=false enable_manager:=false
 ```
 
-Terminal 3, after sourcing Jazzy: `python3 scripts/check_amr_pipeline.py --manual-drive`.
-It sends a short conservative `/cmd_vel` command, then zero velocity and checks
+Terminal 3, after sourcing Jazzy:
+`python3 scripts/check_amr_pipeline.py --manual-drive --diagnostic-lease`.
+It sends a short conservative intermediate velocity command through the gate,
+then zero velocity and checks
 that odometry actually changed. This multi-terminal path is for debugging only;
 normal AMR production remains one launcher command.
 
@@ -287,10 +293,11 @@ transport deadline plus 60 s of cancellation grace marks failure. The manager
 requests cancellation after `AMR_TASK_TIMEOUT_S` (default 300 s), on backend loss,
 Reset, Pause, emergency stop, or a cancelled task. Set this positive, finite
 environment value on the launcher to adjust it for slower rendering hardware.
-The task budget covers both pickup and delivery; no timeout reports success. Nav2
-velocity smoothing stops stale upstream commands while the smoother and bridge
-are alive. A whole bridge/smoother crash is not a hardware emergency stop; stop
-Gazebo as well. Factory station faults still
+The task budget covers both pickup and delivery; no timeout reports success. The
+independent command gate additionally inhibits motion on a 0.5-second manager
+lease timeout, without waiting for task failure or manager restart. This is not a
+hardware emergency stop: gate/bridge failure has no actuator stop guarantee, so
+stop Gazebo as well. Factory station faults still
 use capability-based rerouting before dispatch; a fault at an active delivery
 destination cancels that transport instead of claiming a successful handoff.
 
@@ -301,7 +308,9 @@ until a valid destination is available. ML score changes do not cancel missions.
 
 **Remaining limitation:** other failed/cancelled transports keep the product and robot
 payload held and require operator inspection/reset; uncertain navigation requires
-stopping and restarting the stack. Pause during active AMR transport means
+ownership reconciliation and an explicit safety reset where latched. See the
+[controlled reset procedure](AMR_SAFETY_SUPERVISOR.md#planned-changes-and-recovery).
+Pause during active AMR transport means
 cancel, not automatic action resumption. Simulated mode retains its existing
 Pause/Resume and recovery behavior. Restarting the AMR manager during a task fails
 the task rather than replaying it. Navigation tasks are not restored after a
@@ -338,3 +347,8 @@ Nav2 charger trip. Motion telemetry drives a deterministic Wh model; ROS publish
 launcher to demonstrate gradual charging and resumed production. All 72 directed
 station pairs, including the charger, are checked by `--plan-all`.
 See [energy model, policies and verification](ENERGY_AWARE_AMR.md).
+
+Both production and charging now use the independent motion gate. Planned
+cancellation enters CONTROLLED_HOLD; unexpected loss enters FAULT_LATCHED.
+See [AMR Safety Supervisor](AMR_SAFETY_SUPERVISOR.md) for leases, timeouts,
+odometry confirmation, dashboard observation and measured crash experiments.

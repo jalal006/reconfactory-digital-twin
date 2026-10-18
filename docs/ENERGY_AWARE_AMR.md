@@ -4,6 +4,12 @@ The supervisor owns battery state and admission decisions. The existing AMR
 manager owns one Nav2 action sequence. There is no second charging navigator,
 new scheduler, or independent battery simulation in ROS.
 
+Charging now passes through the same [independent motion gate](AMR_SAFETY_SUPERVISOR.md)
+as production. Each charging navigation generation receives its own fresh lease;
+stationary charging remains inhibited until a new navigation mission is authorized.
+Unexpected authority loss latches for either mission type. No separate charging
+velocity publisher bypasses this gate, and the battery model is unchanged.
+
 ## Data Flow
 
 ```text

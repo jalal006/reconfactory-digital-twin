@@ -87,3 +87,18 @@ the fresh production task and pickup. For a 45-60 second clip, show the charger
 arrival, a short charging segment, and resumed delivery with the event log; disclose
 any time cuts. End on the comparison report rather than claiming faster transport.
 Full procedure and limitations: [Energy-Aware AMR](ENERGY_AWARE_AMR.md).
+
+## Independent Motion Supervision
+
+Stop the normal demo and run `python3 scripts/run_amr_smoke.py --safety manager-crash`
+from a sourced Jazzy/workspace terminal. This starts an isolated stack and prints
+its dashboard URL. The verifier kills only its own AMR manager during loaded
+navigation, observes stopping before restart, tests invalid resets, reconciles the
+aborted run and checks a new delivery after explicit reset.
+
+For a 45-60 second recording, omit startup and disclose time cuts: show authorized
+loaded travel, the latched dashboard state and physical stop, a rejected reset,
+then explicit recovery and a fresh delivery. Finish with measured inhibition and
+stable-stop timings. State that killing the gate itself does not have an enforced
+actuator timeout; this is simulation command supervision, not certified safety.
+See [architecture, reproducible trials and results](AMR_SAFETY_SUPERVISOR.md).

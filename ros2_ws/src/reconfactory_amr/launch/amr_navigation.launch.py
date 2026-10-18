@@ -1,5 +1,6 @@
 """Robot + Nav2 in an already-running factory world; never starts another Gazebo."""
 
+import os
 from pathlib import Path
 
 import xacro
@@ -12,12 +13,29 @@ from launch_ros.actions import Node
 
 
 def launch_nodes(context):
+    baseline = LaunchConfiguration("unsafe_baseline").perform(context).lower() == "true"
+    if baseline and not (
+        os.getenv("ROS_DOMAIN_ID") == "73"
+        and os.getenv("GZ_PARTITION", "").startswith("reconfactory_test_")
+    ):
+        raise RuntimeError("Ungated baseline is restricted to isolated failure-injection tests")
     share = Path(get_package_share_directory("reconfactory_amr"))
     config = str(share / "config/nav2.yaml")
     stations_file = share / "config/stations.yaml"
     home = yaml.safe_load(stations_file.read_text())["stations"]["home"]
     description = xacro.process_file(str(share / "urdf/amr.urdf.xacro")).toxml()
     nodes = [
+        Node(
+            package="reconfactory_amr",
+            executable="safety_supervisor",
+            parameters=[
+                str(share / "config/safety.yaml"),
+                {
+                    "project_root": LaunchConfiguration("project_root"),
+                    "backend_url": LaunchConfiguration("backend_url"),
+                },
+            ],
+        ),
         Node(
             package="robot_state_publisher",
             executable="robot_state_publisher",
@@ -50,6 +68,8 @@ def launch_nodes(context):
             parameters=[{"config_file": str(share / "config/bridge.yaml")}],
         ),
     ]
+    if baseline:
+        nodes = nodes[1:]  # Test-only historical command path, never the production default.
     if LaunchConfiguration("enable_nav2").perform(context).lower() == "true":
         nodes.extend(
             [
@@ -97,7 +117,12 @@ def launch_nodes(context):
         for package, name in servers:
             remaps = [("cmd_vel", "cmd_vel_nav")]
             if name == "velocity_smoother":
-                remaps.append(("cmd_vel_smoothed", "cmd_vel"))
+                remaps.append(
+                    (
+                        "cmd_vel_smoothed",
+                        "/cmd_vel" if baseline else "/reconfactory/amr/nav_cmd_vel",
+                    )
+                )
             nodes.append(
                 Node(
                     package=package,
@@ -130,6 +155,7 @@ def launch_nodes(context):
                             "project_root": LaunchConfiguration("project_root"),
                             "backend_url": LaunchConfiguration("backend_url"),
                             "stations_file": str(stations_file),
+                            "require_safety": not baseline,
                         }
                     ],
                 )
@@ -144,6 +170,7 @@ def generate_launch_description():
             DeclareLaunchArgument("backend_url", default_value="http://127.0.0.1:8000"),
             DeclareLaunchArgument("enable_nav2", default_value="true"),
             DeclareLaunchArgument("enable_manager", default_value="true"),
+            DeclareLaunchArgument("unsafe_baseline", default_value="false"),
             OpaqueFunction(function=launch_nodes),
         ]
     )

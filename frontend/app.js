@@ -1535,6 +1535,14 @@ async function runExperiment() {
 }
 
 function renderTransport(state) {
+  const safetyBanner = document.getElementById("safetyState");
+  if (safetyBanner) {
+    safetyBanner.hidden = state.transport_mode !== "amr";
+    const safety = state.transport?.safety;
+    safetyBanner.textContent = safety?.fresh
+      ? `AMR SAFETY: ${safety.safety_state.replaceAll("_", " ")} | ${safety.safety_reason} | Motion: ${safety.command_inhibited ? "Inhibited" : "Authorized"} | Stopped: ${safety.robot_stopped_confirmed ? "Confirmed" : "Not confirmed"}${safety.reset_required ? " | Operator reset required" : ""}`
+      : "AMR SAFETY: UNAVAILABLE | Motion and stopped state unconfirmed";
+  }
   const energy = state.energy || state.transport?.energy;
   const energyState = document.getElementById("energyState");
   if (energyState) {

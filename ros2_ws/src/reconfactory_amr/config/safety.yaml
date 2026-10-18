@@ -1,0 +1,9 @@
+reconfactory_amr_safety:
+  ros__parameters:
+    lease_timeout_s: 0.5
+    command_timeout_s: 0.3
+    first_command_timeout_s: 2.0
+    odometry_timeout_s: 0.5
+    stopped_duration_s: 0.3
+    linear_stop_m_s: 0.03
+    angular_stop_rad_s: 0.05

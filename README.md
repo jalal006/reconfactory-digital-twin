@@ -9,7 +9,8 @@
 A fault-aware smart factory digital twin with Gazebo camera perception,
 ROS 2 / OpenCV inspection, optional Nav2 autonomous robot transport, an animated
 browser dashboard, ML-based predictive maintenance, fault-aware in-flight AMR
-replanning, battery-aware autonomous charging, and SQLite analytics.
+replanning, battery-aware autonomous charging, independent AMR command gating,
+and SQLite analytics.
 
 An optional **single-AMR transport mode** adds a differential-drive Gazebo robot,
 LiDAR, AMCL localization and Nav2 delivery tasks. The supervisor waits for actual
@@ -49,6 +50,7 @@ drill-to-quality access; the original conveyor layout remains the default.
 | Integration | ROS 2 state/fault/command topics and optional OPC UA |
 | Robot transport | One differential-drive AMR, LiDAR, AMCL, Nav2 and delivery-gated production |
 | Energy autonomy | Motion-based battery model, mission reserve checks, Nav2 charging and deferred-work resumption |
+| Motion supervision | Independent lease watchdog, latched command inhibition, odometry-verified stopping and explicit reset |
 | Quality | Automated regression tests plus Ruff lint and formatting checks |
 
 ## Factory Flow
@@ -87,9 +89,14 @@ flowchart LR
     ENERGY -->|Authorize Production or Charging| TASK
     TASK --> AMR[AMR Manager]
     AMR --> NAV[Nav2 NavigateToPose]
-    NAV --> ROBOT[Gazebo AMR]
+    NAV --> SMOOTH[Velocity Smoother]
+    SMOOTH --> GATE[Independent Motion Safety Supervisor]
+    AMR -->|Fresh Mission Lease| GATE
+    GATE -->|Final cmd_vel| ROBOT[Gazebo AMR]
+    GATE -->|Safety State and Events| API
     ROBOT --> SENS[LiDAR + Odometry]
     SENS --> NAV
+    SENS -->|Odometry| GATE
     SENS -->|Motion Counters| ENERGY
     AMR -->|Delivery Status| SUP
     SUP -->|Hard Destination Fault: Cancel| AMR
@@ -114,6 +121,14 @@ the destination before resuming. Loaded work is retained on critical holds.
 The model is deterministic simulation, not calibrated battery physics.
 See [energy configuration, equations, demo and comparison](docs/ENERGY_AWARE_AMR.md).
 Quick low-battery demo: `AMR_INITIAL_SOC=0.21 TRANSPORT_MODE=amr bash run_ubuntu.sh`.
+
+An independent ROS process gates final velocity commands using local monotonic
+mission-lease, command and odometry freshness. Unexpected manager loss latches
+motion inhibition without waiting for its restart; explicit reconciled reset is
+required. Planned fault replanning and charging use the same gate. This is
+**simulation supervision, not a hardware emergency stop or certified safety**;
+gate-process death has no independent actuator stop guarantee. See
+[architecture, recovery, failure-injection tests and measurements](docs/AMR_SAFETY_SUPERVISOR.md).
 
 ## Install And Run
 
@@ -472,15 +487,17 @@ See [ROS 2 integration](docs/ROS2_INTEGRATION.md) for command examples.
 
 ## Tests
 
-Latest verification (October 6, 2026): **276 Python tests passed on Windows and
-WSL**, Ruff lint/format passed, and the browser harness passed nine movement, one
-health-card, two replanning-banner and two energy-banner scenarios. Both ROS
-packages built. Live low-SOC charging completed through real camera inspection
-and Accepted output; a separate loaded-fault run retained its payload and delivered
-to B. Nav2 planned all 72 directed station pairs including the charger. See
-[energy model, experiment and measured verification](docs/ENERGY_AWARE_AMR.md).
-Earlier backend-outage and manager-restart checks held payload without false
-delivery. These samples are not safety or performance guarantees.
+Latest regression verification (October 18, 2026): **316 Python tests passed on
+Windows and WSL**, preserving the 276-test baseline; Ruff lint/format passed.
+The browser harness passes nine movement, one health-card, two replanning, two
+energy and three safety-indicator scenarios (executed in V8 locally; Node in CI).
+Three live manager-loss trials confirmed stable stops in **1.005-1.067 seconds**
+without manager restart. Backend-loss stopping and explicit recovery also passed.
+Killing the gate itself did **not** automatically stop Gazebo. See
+[measurements and limits](docs/AMR_SAFETY_SUPERVISOR.md#measured-verification).
+Live fault replanning and charging also passed with the gate, including real
+camera inspection and Accepted output. Earlier measurements are retained in
+[energy verification](docs/ENERGY_AWARE_AMR.md). No timing guarantee is implied.
 
 ```bash
 python -m pytest
@@ -513,6 +530,7 @@ Replanning and resilience checks, also with the normal stack stopped:
 .venv-wsl/bin/python scripts/run_amr_smoke.py --resilience backend-outage
 .venv-wsl/bin/python scripts/run_amr_smoke.py --resilience manager-restart
 .venv-wsl/bin/python scripts/run_replanning_experiment.py
+python3 scripts/run_safety_campaign.py
 ```
 
 The paired experiment compares the previous static cancel-and-hold policy with
@@ -579,6 +597,7 @@ docs/              Technical documentation
 - [ROS 2 integration](docs/ROS2_INTEGRATION.md)
 - [Gazebo integration](docs/GAZEBO_FALLBACK.md)
 - [AMR navigation](docs/AMR_NAVIGATION.md)
+- [Independent motion supervision, reset and measured failure tests](docs/AMR_SAFETY_SUPERVISOR.md)
 - [Battery-aware autonomy, charging and energy comparison](docs/ENERGY_AWARE_AMR.md)
 - [Fault-aware replanning, resilience tests and measured results](docs/FAULT_AWARE_REPLANNING.md)
 - [AMR verification and change inventory](docs/AMR_VERIFICATION.md)
@@ -598,9 +617,10 @@ docs/              Technical documentation
 - AMR mode supports one robot and logical payload attachment, not physical
   grasping or fleet management. Live all-recipe/fault endurance testing remains
   broader than the completed navigation and normal-product checks.
-- Manager-crash stop confirmation took 4.29-5.87 s in two tests; this is not an
-  independent emergency-stop watchdog. Uncertain navigation requires inspection
-  and stack restart. Missions are not restored after loss of backend state.
+- An independent command gate now handles manager loss while the gate remains
+  alive. Gate-process death has no independently enforced actuator timeout;
+  this is not a hardware emergency stop. Uncertain navigation requires inspection
+  and explicit reconciliation/reset. Missions are not restored after backend loss.
 - Battery consumption is a deterministic simulation model with geometric mission
   estimates and accelerated demo charging, not calibrated hardware battery physics.
   Critical-energy holds require inspection/reset; browser fallback uses logical

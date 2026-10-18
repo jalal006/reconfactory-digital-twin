@@ -213,3 +213,24 @@ and publishes the backend-computed energy state on
 the battery policy or product scheduler. `percentage` is SOC in 0..1; charging
 status is reported only during eligible dock charging. Unknown physical fields
 remain NaN. See [Energy-Aware AMR](ENERGY_AWARE_AMR.md) for demo and verification.
+
+## AMR Motion Supervision
+
+Normal AMR launch also starts `/reconfactory_amr_safety`. The Nav2 velocity
+smoother publishes `/reconfactory/amr/nav_cmd_vel`; the independent gate is the
+only intended publisher of final `/cmd_vel`. It requires a fresh manager mission
+lease and odometry. Browser-only mode does not require this node.
+
+In a sourced terminal, check ownership and then monitor state:
+
+```bash
+ros2 topic info /cmd_vel -v
+ros2 topic echo /reconfactory/amr/safety/state
+```
+
+Expect exactly one final publisher, `reconfactory_amr_safety`. Manager loss
+latches inhibition; restarting the manager does not clear it. See
+[AMR Motion Safety Supervisor](AMR_SAFETY_SUPERVISOR.md) for explicit reset,
+failure-injection commands and measured stopping results. This is simulation
+supervision, not certified safety: killing the gate itself has no independent
+actuator stop guarantee.

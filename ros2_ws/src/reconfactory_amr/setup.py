@@ -15,5 +15,10 @@ setup(
         ],
     ],
     install_requires=["setuptools"],
-    entry_points={"console_scripts": ["amr_manager = reconfactory_amr.manager:main"]},
+    entry_points={
+        "console_scripts": [
+            "amr_manager = reconfactory_amr.manager:main",
+            "safety_supervisor = reconfactory_amr.safety_supervisor:main",
+        ]
+    },
 )
