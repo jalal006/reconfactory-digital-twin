@@ -102,3 +102,12 @@ then explicit recovery and a fresh delivery. Finish with measured inhibition and
 stable-stop timings. State that killing the gate itself does not have an enforced
 actuator timeout; this is simulation command supervision, not certified safety.
 See [architecture, reproducible trials and results](AMR_SAFETY_SUPERVISOR.md).
+## Gazebo Gate-Death Demonstration
+
+For the independent actuator protection demo, stop the regular stack and run
+`python3 scripts/run_amr_smoke.py --safety gate-crash` in a sourced Jazzy terminal.
+The isolated harness loads a red product, kills only the ROS safety process during
+delivery and measures Gazebo actuator zero plus stopped odometry. No cleanup
+publisher initiates stopping. It also checks retained payload, restart inhibition,
+invalid reset, explicit recovery and a new delivered mission. See
+[configuration, measurements and remaining limits](ACTUATOR_DEADMAN_WATCHDOG.md).

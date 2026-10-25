@@ -227,3 +227,12 @@ ws://127.0.0.1:8000/ws
 ```
 
 Streams the same snapshot returned by `/api/status`.
+## Actuator Watchdog Observation
+
+`POST /api/transport/actuator` accepts `{"state": <Gazebo watchdog JSON>}` in AMR
+mode only (409 otherwise; malformed observations return 400). It records bounded
+transition history with stable event IDs. It cannot authorize motion or reset a
+watchdog. `GET /api/transport` and WebSocket snapshots expose
+`actuator_watchdog` separately from ROS `safety`; after one second without a new
+sample it becomes UNAVAILABLE and does not claim stopping. Explicit recovery uses
+the validated ROS service described in [Actuator Deadman Watchdog](ACTUATOR_DEADMAN_WATCHDOG.md).

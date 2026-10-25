@@ -122,11 +122,12 @@ def main():
                 if process.poll() is not None:
                     raise RuntimeError("Launcher exited; inspect launcher.log")
                 try:
-                    if (
-                        http("/api/transport").get("ready")
-                        or args.manual_drive
-                        or args.navigation_only
-                    ):
+                    startup = http("/api/transport")
+                    if startup.get("actuator_watchdog", {}).get("state") == "FAULT_LATCHED":
+                        raise RuntimeError(
+                            f"Actuator latched during startup: {startup['actuator_watchdog']}"
+                        )
+                    if startup.get("ready") or args.manual_drive or args.navigation_only:
                         break
                 except OSError:
                     pass
@@ -232,6 +233,15 @@ def main():
                     json.dumps(state, indent=2), encoding="utf-8"
                 )
                 task = (state.get("transport") or {}).get("active_task") or {}
+                safety = (state.get("transport") or {}).get("safety") or {}
+                actuator = (state.get("transport") or {}).get("actuator_watchdog") or {}
+                if (
+                    safety.get("safety_state") == "FAULT_LATCHED"
+                    or actuator.get("state") == "FAULT_LATCHED"
+                ):
+                    raise RuntimeError(
+                        f"Unexpected production safety latch: ROS={safety}, actuator={actuator}"
+                    )
                 if task.get("status") in {"failed", "cancelled"} and not (
                     args.fault_replan and task.get("replan_state") == "awaiting_replan"
                 ):

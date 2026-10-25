@@ -155,9 +155,12 @@ def _nav2_status() -> IntegrationStatus:
     available = bool(
         _bash_output(
             "source /opt/ros/jazzy/setup.bash 2>/dev/null && "
-            "ros2 pkg prefix nav2_bringup >/dev/null 2>&1 && "
-            "ros2 pkg prefix nav2_smac_planner >/dev/null 2>&1 && "
-            "ros2 pkg prefix nav2_regulated_pure_pursuit_controller >/dev/null 2>&1 && echo installed"
+            "/usr/bin/python3 -c '"
+            "from ament_index_python.packages import get_package_prefix; "
+            'packages = ("nav2_bringup", "nav2_smac_planner", '
+            '"nav2_regulated_pure_pursuit_controller"); '
+            "[get_package_prefix(package) for package in packages]; "
+            'print("installed")\''
         )
     )
     return IntegrationStatus(
@@ -170,10 +173,18 @@ def _nav2_status() -> IntegrationStatus:
 
 
 def _cv_bridge_status() -> IntegrationStatus:
+    # ROS nodes use Ubuntu's Python and apt-installed NumPy/OpenCV, not the
+    # dashboard virtualenv. Exercise conversion as imports can hide ABI errors.
     available = bool(
         _bash_output(
             "source /opt/ros/jazzy/setup.bash 2>/dev/null || true; "
-            "python3 -c 'import cv_bridge; print(\"installed\")' 2>/dev/null"
+            "/usr/bin/python3 -c 'from cv_bridge import CvBridge; "
+            "import numpy as np; "
+            "bridge = CvBridge(); "
+            "message = bridge.cv2_to_imgmsg(np.zeros((2, 2, 3), dtype=np.uint8), "
+            'encoding="bgr8"); '
+            'bridge.imgmsg_to_cv2(message, desired_encoding="rgb8"); '
+            'print("installed")\''
         )
     )
     return IntegrationStatus(
@@ -208,8 +219,10 @@ def _bash_output(script: str) -> str:
             check=False,
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=15,
         )
     except (OSError, subprocess.TimeoutExpired):
+        return ""
+    if completed.returncode != 0:
         return ""
     return completed.stdout.strip().splitlines()[-1] if completed.stdout.strip() else ""

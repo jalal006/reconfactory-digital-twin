@@ -9,8 +9,8 @@
 A fault-aware smart factory digital twin with Gazebo camera perception,
 ROS 2 / OpenCV inspection, optional Nav2 autonomous robot transport, an animated
 browser dashboard, ML-based predictive maintenance, fault-aware in-flight AMR
-replanning, battery-aware autonomous charging, independent AMR command gating,
-and SQLite analytics.
+replanning, battery-aware autonomous charging, independent ROS command gating,
+a Gazebo-side actuator deadman watchdog, and SQLite analytics.
 
 An optional **single-AMR transport mode** adds a differential-drive Gazebo robot,
 LiDAR, AMCL localization and Nav2 delivery tasks. The supervisor waits for actual
@@ -92,7 +92,9 @@ flowchart LR
     NAV --> SMOOTH[Velocity Smoother]
     SMOOTH --> GATE[Independent Motion Safety Supervisor]
     AMR -->|Fresh Mission Lease| GATE
-    GATE -->|Final cmd_vel| ROBOT[Gazebo AMR]
+    GATE -->|Final cmd_vel via Bridge| DEADMAN[Gazebo Actuator Watchdog]
+    DEADMAN -->|Fresh Command or Zero| ROBOT[Gazebo DiffDrive AMR]
+    DEADMAN -->|Actuator State and Events| API
     GATE -->|Safety State and Events| API
     ROBOT --> SENS[LiDAR + Odometry]
     SENS --> NAV
@@ -127,7 +129,9 @@ mission-lease, command and odometry freshness. Unexpected manager loss latches
 motion inhibition without waiting for its restart; explicit reconciled reset is
 required. Planned fault replanning and charging use the same gate. This is
 **simulation supervision, not a hardware emergency stop or certified safety**;
-gate-process death has no independent actuator stop guarantee. See
+the Gazebo-side deadman now detects missing final commands and latches zero
+output even if the ROS gate dies. It still depends on Gazebo running. See
+[actuator architecture, explicit recovery and live measurements](docs/ACTUATOR_DEADMAN_WATCHDOG.md) and
 [architecture, recovery, failure-injection tests and measurements](docs/AMR_SAFETY_SUPERVISOR.md).
 
 ## Install And Run
@@ -195,6 +199,13 @@ then starts ROS 2 and Gazebo automatically if they are available. Press
 
 ### Full ROS 2 + Gazebo Setup
 
+For WSL, install the versioned distribution with
+`wsl --install -d Ubuntu-24.04` and select it with `wsl -d Ubuntu-24.04`.
+The unversioned Ubuntu app may install a different release. When restoring a
+copied workspace, recreate the Linux virtual environment and ROS build/install
+directories rather than relying on copied executables and symlinks. See the
+[workspace recovery and verification record](docs/RECOVERY_VERIFICATION_2026-10-24.md).
+
 Use Ubuntu 24.04 or WSL Ubuntu 24.04. Install ROS 2 Jazzy from the official ROS
 2 Ubuntu deb guide, then install the project simulation tools:
 
@@ -239,6 +250,9 @@ After the ROS 2 Jazzy + Gazebo setup above, install the navigation dependencies:
 sudo apt install -y ros-jazzy-navigation2 ros-jazzy-nav2-bringup \
   ros-jazzy-nav2-regulated-pure-pursuit-controller ros-jazzy-nav2-smac-planner \
   ros-jazzy-robot-state-publisher ros-jazzy-xacro ros-jazzy-tf2-tools
+sudo apt install -y build-essential cmake ros-jazzy-ament-cmake \
+  ros-jazzy-ament-cmake-gtest ros-jazzy-gz-sim-vendor \
+  ros-jazzy-gz-transport-vendor ros-jazzy-gz-plugin-vendor nlohmann-json3-dev
 source /opt/ros/jazzy/setup.bash
 TRANSPORT_MODE=amr VISION_SOURCE=gazebo bash run_ubuntu.sh
 ```
@@ -308,6 +322,20 @@ python -m ruff format --check .
 ```
 
 ### Common Fixes
+
+On Windows, use **Ubuntu-24.04** for ROS 2 Jazzy (`wsl -d Ubuntu-24.04`).
+Open the address printed by `run_ubuntu.sh`; the WSL IP can change after a restart.
+Windows can also reach the app at `http://localhost:8000` when WSL localhost
+forwarding is available. Keep the launcher running: Ctrl+C stops the server.
+
+The Integrations panel checks the environment of the running backend. ROS camera
+and Nav2 probes use `/usr/bin/python3`, matching the apt-installed ROS nodes,
+instead of the dashboard virtualenv. The camera probe exercises image conversion;
+Nav2 checks all three required package entries in one process. Checks allow 15
+seconds per subprocess. A failed or timed-out probe can still display `missing`;
+this is not proof that a package was uninstalled. Restart the backend after code
+updates and use `.venv-wsl/bin/python scripts/check_integrations.py` to inspect it.
+Gazebo opening alone does not verify camera conversion or Nav2 availability.
 
 If port `8000` is busy, stop the old process first.
 
@@ -487,17 +515,28 @@ See [ROS 2 integration](docs/ROS2_INTEGRATION.md) for command examples.
 
 ## Tests
 
-Latest regression verification (October 18, 2026): **316 Python tests passed on
+Previous regression baseline (October 18, 2026): **316 Python tests passed on
 Windows and WSL**, preserving the 276-test baseline; Ruff lint/format passed.
 The browser harness passes nine movement, one health-card, two replanning, two
 energy and three safety-indicator scenarios (executed in V8 locally; Node in CI).
 Three live manager-loss trials confirmed stable stops in **1.005-1.067 seconds**
 without manager restart. Backend-loss stopping and explicit recovery also passed.
-Killing the gate itself did **not** automatically stop Gazebo. See
+Without the actuator watchdog, killing the gate itself did **not** automatically stop Gazebo. See
 [measurements and limits](docs/AMR_SAFETY_SUPERVISOR.md#measured-verification).
 Live fault replanning and charging also passed with the gate, including real
 camera inspection and Accepted output. Earlier measurements are retained in
 [energy verification](docs/ENERGY_AWARE_AMR.md). No timing guarantee is implied.
+
+The October 24–25 restored-workspace verification built all three ROS packages
+against Gazebo Sim 8.15.0 and passed 24 C++ policy cases. Three complete gate-crash
+trials stopped in **0.750–0.761 seconds**, retained their payload, stayed latched
+after gate restart and completed a new delivery after explicit recovery.
+Manager loss, backend outage, fault replanning, charging and normal camera-backed
+production also passed. Station snapshots now use one atomic SQLite transaction,
+reducing the backend disk stalls found during recovery. The full Windows Python
+and Ubuntu Python suites pass **367 tests** each, with Ruff lint/format and all
+20 browser scenarios passing. See the
+[current results, failed attempts and limitations](docs/RECOVERY_VERIFICATION_2026-10-24.md).
 
 ```bash
 python -m pytest
@@ -598,6 +637,7 @@ docs/              Technical documentation
 - [Gazebo integration](docs/GAZEBO_FALLBACK.md)
 - [AMR navigation](docs/AMR_NAVIGATION.md)
 - [Independent motion supervision, reset and measured failure tests](docs/AMR_SAFETY_SUPERVISOR.md)
+- [Gazebo actuator deadman, command ownership and gate-crash experiments](docs/ACTUATOR_DEADMAN_WATCHDOG.md)
 - [Battery-aware autonomy, charging and energy comparison](docs/ENERGY_AWARE_AMR.md)
 - [Fault-aware replanning, resilience tests and measured results](docs/FAULT_AWARE_REPLANNING.md)
 - [AMR verification and change inventory](docs/AMR_VERIFICATION.md)
@@ -617,9 +657,9 @@ docs/              Technical documentation
 - AMR mode supports one robot and logical payload attachment, not physical
   grasping or fleet management. Live all-recipe/fault endurance testing remains
   broader than the completed navigation and normal-product checks.
-- An independent command gate now handles manager loss while the gate remains
-  alive. Gate-process death has no independently enforced actuator timeout;
-  this is not a hardware emergency stop. Uncertain navigation requires inspection
+- Independent ROS supervision handles manager loss; a Gazebo actuator watchdog
+  handles disappearance of final ROS commands. Gazebo/process freezes and real
+  hardware still require external protection. Uncertain navigation requires inspection
   and explicit reconciliation/reset. Missions are not restored after backend loss.
 - Battery consumption is a deterministic simulation model with geometric mission
   estimates and accelerated demo charging, not calibrated hardware battery physics.

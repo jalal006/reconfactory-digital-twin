@@ -80,3 +80,35 @@ def test_safety_api_is_observation_only_and_optional(monkeypatch, mode):
             backend.transport_safety(backend.SafetyObservation(state={"safety_state": "bad"}))
         )
     assert error.value.status_code == 400
+
+
+@pytest.mark.parametrize("mode", ["amr", "simulated"])
+def test_actuator_api_remains_observation_only(monkeypatch, mode):
+    from fastapi import HTTPException
+
+    factory = reconfactory.FactorySupervisor(
+        transport_mode=mode, enable_database=False, maintenance_mode="rules"
+    )
+    monkeypatch.setattr(reconfactory, "FactorySupervisor", lambda **_: factory)
+    spec = importlib.util.spec_from_file_location(
+        "test_actuator_api", Path(__file__).resolve().parents[1] / "app" / "main.py"
+    )
+    backend = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, backend)
+    spec.loader.exec_module(backend)
+    payload = backend.SafetyObservation(
+        state={"state": "FAULT_LATCHED", "instance_id": "test", "sample_sequence": 1}
+    )
+    if mode == "simulated":
+        with pytest.raises(HTTPException) as error:
+            asyncio.run(backend.transport_actuator(payload))
+        assert error.value.status_code == 409
+    else:
+        assert asyncio.run(backend.transport_actuator(payload)) == {"ok": True}
+        assert not factory.running and factory.transport.active is None
+        assert factory.transport.actuator_snapshot()["state"] == "FAULT_LATCHED"
+        with pytest.raises(HTTPException) as error:
+            asyncio.run(
+                backend.transport_actuator(backend.SafetyObservation(state={"state": "bad"}))
+            )
+        assert error.value.status_code == 400

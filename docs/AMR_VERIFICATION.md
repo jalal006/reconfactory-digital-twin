@@ -1,5 +1,10 @@
 # AMR Milestone Verification
 
+For the current October actuator-watchdog and recovery results, see
+[24–25 October verification](RECOVERY_VERIFICATION_2026-10-24.md) and
+[watchdog design and limits](ACTUATOR_DEADMAN_WATCHDOG.md). The September counts
+and measurements below are historical, not the current regression totals.
+
 Verification dates: 2026-09-14 through 2026-09-21. The latest controller checks
 are below; older measurements are retained as historical comparisons.
 This is a single-robot simulation prototype, not

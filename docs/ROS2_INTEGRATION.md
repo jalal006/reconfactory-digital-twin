@@ -232,5 +232,6 @@ Expect exactly one final publisher, `reconfactory_amr_safety`. Manager loss
 latches inhibition; restarting the manager does not clear it. See
 [AMR Motion Safety Supervisor](AMR_SAFETY_SUPERVISOR.md) for explicit reset,
 failure-injection commands and measured stopping results. This is simulation
-supervision, not certified safety: killing the gate itself has no independent
-actuator stop guarantee.
+supervision, not certified safety. A downstream Gazebo actuator deadman now handles
+loss of the gate's output stream; its state is separately exposed on
+`/reconfactory/amr/actuator/state`. See [actuator protection and explicit recovery](ACTUATOR_DEADMAN_WATCHDOG.md).

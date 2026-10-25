@@ -1536,6 +1536,14 @@ async function runExperiment() {
 
 function renderTransport(state) {
   const safetyBanner = document.getElementById("safetyState");
+  const actuatorBanner = document.getElementById("actuatorState");
+  if (actuatorBanner) {
+    actuatorBanner.hidden = state.transport_mode !== "amr";
+    const actuator = state.transport?.actuator_watchdog;
+    actuatorBanner.textContent = actuator?.fresh
+      ? `GAZEBO ACTUATOR: ${actuator.state.replaceAll("_", " ")} | ${actuator.reason} | Stopped: ${actuator.robot_stopped_confirmed ? "Confirmed" : "Not confirmed"}${actuator.reset_required ? " | Operator reset required" : ""}`
+      : "GAZEBO ACTUATOR: UNAVAILABLE | Stop not confirmed";
+  }
   if (safetyBanner) {
     safetyBanner.hidden = state.transport_mode !== "amr";
     const safety = state.transport?.safety;

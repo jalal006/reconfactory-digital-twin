@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Iterable
+from contextlib import closing, nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -187,9 +189,22 @@ class DataLogger:
                 ),
             )
 
-    def log_machine_snapshot(self, status: MachineStatus) -> None:
+    def log_machine_snapshots(self, statuses: Iterable[MachineStatus]) -> None:
+        """Persist one factory observation atomically, with one disk commit."""
+        previous_states = self._maintenance_states.copy()
+        try:
+            with closing(self._connect()) as conn, conn:
+                for status in statuses:
+                    self.log_machine_snapshot(status, _connection=conn)
+        except Exception:
+            self._maintenance_states = previous_states
+            raise
+
+    def log_machine_snapshot(
+        self, status: MachineStatus, *, _connection: sqlite3.Connection | None = None
+    ) -> None:
         data = status.to_dict()
-        with self._connect() as conn:
+        with self._connect() if _connection is None else nullcontext(_connection) as conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO machines

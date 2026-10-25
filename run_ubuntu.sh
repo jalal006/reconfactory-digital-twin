@@ -63,6 +63,12 @@ if [ "${TRANSPORT_MODE}" = "amr" ]; then
     fi
   done
   python scripts/generate_amr_map.py
+  # Gazebo must inherit the installed plugin path before its server starts.
+  (cd ros2_ws && colcon build --packages-up-to reconfactory_amr --symlink-install)
+  set +u
+  source ros2_ws/install/setup.bash
+  set -u
+  export RECONFACTORY_AMR_PREBUILT=1
 fi
 
 APP_PORT="${PORT:-8000}"

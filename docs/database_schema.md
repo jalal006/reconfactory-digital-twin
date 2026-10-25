@@ -25,6 +25,12 @@ Stores the latest known state of each product. The `data_json` column contains t
 
 Stores time-series machine status snapshots for analytics and later utilization reports.
 
+Each supervisor snapshot cycle writes all stations in one SQLite transaction.
+Rows and transition events are preserved; a failed batch rolls back the database
+and restores the maintenance transition cache. This reduces disk stalls on WSL
+Windows-mounted workspaces without changing the schema or sampling cadence.
+See the [recovery measurements](RECOVERY_VERIFICATION_2026-10-24.md).
+
 ### `faults`
 
 Stores diagnosed fault records.

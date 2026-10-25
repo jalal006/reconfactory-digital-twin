@@ -233,6 +233,17 @@ async def transport_safety(payload: SafetyObservation) -> dict[str, bool]:
     return {"ok": True}
 
 
+@app.post("/api/transport/actuator")
+async def transport_actuator(payload: SafetyObservation) -> dict[str, bool]:
+    if not supervisor.transport:
+        raise HTTPException(409, "AMR mode is disabled")
+    try:
+        supervisor.transport.observe_actuator(payload.state)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True}
+
+
 @app.get("/api/experiments/recovery")
 async def recovery_experiment(product_count: int = 12) -> dict[str, Any]:
     return await asyncio.to_thread(

@@ -19,6 +19,7 @@ setup(
         "console_scripts": [
             "amr_manager = reconfactory_amr.manager:main",
             "safety_supervisor = reconfactory_amr.safety_supervisor:main",
+            "actuator_observer = reconfactory_amr.actuator_observer:main",
         ]
     },
 )

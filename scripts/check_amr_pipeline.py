@@ -139,6 +139,12 @@ def main():
     node.create_subscription(Twist, "/cmd_vel", lambda msg: samples.update(command=msg), 10)
     node.create_subscription(
         String,
+        "/reconfactory/amr/actuator/state",
+        lambda msg: samples.update(actuator=json.loads(msg.data), actuator_at=time.monotonic()),
+        1,
+    )
+    node.create_subscription(
+        String,
         "/reconfactory/amr/safety/state",
         lambda msg: samples.update(safety=json.loads(msg.data), safety_at=time.monotonic()),
         QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL),
@@ -191,6 +197,14 @@ def main():
             state.get("odometry_fresh") is True
             and state.get("safety_state") in {"DISARMED", "AUTHORIZED", "CONTROLLED_HOLD"}
             and time.monotonic() - samples.get("safety_at", 0) < 0.5
+            and (
+                samples.get("actuator", {}).get("state") == "ARMED"
+                or (
+                    samples.get("actuator", {}).get("state") == "STARTUP_INHIBITED"
+                    and samples.get("actuator", {}).get("startup_ready") is True
+                )
+            )
+            and time.monotonic() - samples.get("actuator_at", 0) < 0.5
         )
 
     try:

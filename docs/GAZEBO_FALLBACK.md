@@ -200,11 +200,14 @@ backend-owned. See [Energy-Aware AMR](ENERGY_AWARE_AMR.md).
 ## AMR Velocity Ownership
 
 In AMR mode, the independent ROS motion supervisor gates Nav2 commands before
-the existing bridge sends `/cmd_vel` to Gazebo `/amr/cmd_vel`. Do not publish
+the existing bridge sends `/cmd_vel` to Gazebo `/amr/cmd_vel_requested`. The C++
+watchdog alone forwards commands to DiffDrive's `/amr/actuator_cmd_vel`. Do not publish
 manual commands directly to either final topic while production is running.
 Use the isolated `python3 scripts/run_amr_smoke.py --manual-drive` diagnostic
 instead. It disables the production manager and exercises the same gate.
 
-The installed DiffDrive retains its last command if the gate is killed; there
-is no independent actuator timeout. See [motion supervision and limitations](AMR_SAFETY_SUPERVISOR.md)
+The unchanged DiffDrive retains targets, but the watchdog now publishes repeated
+zeros when the final ROS stream expires. It remains latched after ROS gate restart.
+The launcher builds and sources the plugin before starting Gazebo. See
+[actuator watchdog, reset and limitations](ACTUATOR_DEADMAN_WATCHDOG.md)
 before running failure-injection tests. The conveyor mode and camera are unchanged.

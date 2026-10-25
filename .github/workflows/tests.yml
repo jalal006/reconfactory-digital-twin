@@ -8,6 +8,20 @@ permissions:
   contents: read
 
 jobs:
+  watchdog-policy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install pure C++ test dependencies
+        run: sudo apt-get update && sudo apt-get install -y g++ libgtest-dev
+      - name: Build and test watchdog policy without ROS or Gazebo
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror -pthread \
+            -Iros2_ws/src/reconfactory_gazebo_watchdog/include \
+            ros2_ws/src/reconfactory_gazebo_watchdog/test/policy_test.cc \
+            -lgtest_main -lgtest -o /tmp/watchdog_policy_test
+          /tmp/watchdog_policy_test
   pytest:
     runs-on: ubuntu-24.04
     timeout-minutes: 10

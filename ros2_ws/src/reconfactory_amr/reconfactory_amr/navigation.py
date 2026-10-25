@@ -35,6 +35,14 @@ class NavigationRunner:
     def task(self):
         return self.registry.active
 
+    def is_unsubmitted_request(self, payload: dict) -> bool:
+        return bool(
+            not self.uncertain
+            and payload.get("status") == "requested"
+            and payload.get("task_id")
+            and payload["task_id"] not in self.registry.seen
+        )
+
     def submit(self, payload: dict) -> None:
         if self.uncertain:
             raise ValueError("Navigation state uncertain; restart stack after inspecting robot")

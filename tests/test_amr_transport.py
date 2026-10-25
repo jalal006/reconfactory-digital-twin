@@ -395,6 +395,29 @@ class MockClient:
         return response
 
 
+def test_unsubmitted_task_waits_without_navigation_or_false_orphan():
+    client, events = MockClient(), []
+    runner = NavigationRunner(STATIONS, client, lambda p: p, events.append)
+    payload = request().to_dict()
+    assert runner.is_unsubmitted_request(payload)
+    assert not client.goals and not events and runner.task is None
+    runner.submit(payload)
+    assert not runner.is_unsubmitted_request(payload)
+
+
+@pytest.mark.parametrize("status", ["requested", "accepted", "navigating"])
+def test_uncertain_restart_cannot_treat_owned_task_as_unsubmitted(status):
+    runner = NavigationRunner(STATIONS, MockClient(), lambda p: p, lambda p: None)
+    runner.uncertain = True
+    assert not runner.is_unsubmitted_request({**request().to_dict(), "status": status})
+
+
+@pytest.mark.parametrize("status", ["accepted", "navigating", "delivered", "cancelled"])
+def test_started_or_terminal_task_is_not_unsubmitted(status):
+    runner = NavigationRunner(STATIONS, MockClient(), lambda p: p, lambda p: None)
+    assert not runner.is_unsubmitted_request({**request().to_dict(), "status": status})
+
+
 def test_nav2_success_requires_two_action_successes():
     client, events = MockClient(), []
     runner = NavigationRunner(STATIONS, client, lambda p: p, events.append)

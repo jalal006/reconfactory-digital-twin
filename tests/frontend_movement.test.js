@@ -159,11 +159,22 @@ function runFrontendMovementTests(source) {
       assert(safetyBanner.textContent.includes("UNAVAILABLE") && !safetyBanner.textContent.includes("Stopped: Confirmed"), "Stale safety telemetry cannot claim stopped");
       renderTransport({transport_mode: "simulated"});
       assert(safetyBanner.hidden, "Browser-only operation needs no ROS safety status");
+      renderTransport({transport_mode: "amr", transport: {actuator_watchdog: {
+        fresh: true, state: "FAULT_LATCHED", reason: "Command stream timeout",
+        robot_stopped_confirmed: true, reset_required: true
+      }}});
+      const actuatorBanner = document.getElementById("actuatorState");
+      assert(!actuatorBanner.hidden && actuatorBanner.textContent.includes("GAZEBO ACTUATOR: FAULT LATCHED"), "Distinguish actuator fault from ROS gate");
+      assert(actuatorBanner.textContent.includes("Stopped: Confirmed"), "Show measured stopped state");
+      renderTransport({transport_mode: "amr", transport: {actuator_watchdog: {fresh: false, state: "ARMED", robot_stopped_confirmed: true}}});
+      assert(actuatorBanner.textContent.includes("UNAVAILABLE") && !actuatorBanner.textContent.includes("Stopped: Confirmed"), "Stale actuator observation cannot imply stopping");
+      renderTransport({transport_mode: "simulated"});
+      assert(actuatorBanner.hidden, "Browser fallback needs no Gazebo watchdog");
     `,
   );
   run(document, { addEventListener() {} }, () => new Promise(() => {}), () => 1,
     { now: () => clock.now }, clock);
-  return "9 browser movement, 1 health-card, 2 replanning-banner, 2 energy-banner and 3 safety-banner scenarios passed";
+  return "9 browser movement, 1 health-card, 2 replanning-banner, 2 energy-banner, 3 safety-banner and 3 actuator-banner scenarios passed";
 }
 
 if (typeof require === "function") {

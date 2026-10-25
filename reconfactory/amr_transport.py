@@ -36,6 +36,50 @@ class FactoryTransport:
         self.safety_state = None
         self.safety_received_at = 0.0
         self.safety_events: dict[str, bool] = {}
+        self.actuator_state = None
+        self.actuator_received_at = 0.0
+        self.actuator_events: dict[str, bool] = {}
+
+    def observe_actuator(self, state: dict) -> None:
+        from .actuator_watchdog import validate_observation
+
+        validate_observation(state)
+        old = self.actuator_state or {}
+        if state["instance_id"] == old.get("instance_id") and state[
+            "sample_sequence"
+        ] <= old.get("sample_sequence", 0):
+            return
+        self.actuator_state = dict(state)
+        self.actuator_received_at = time.monotonic()
+        for event in state.get("events", []):
+            if event["event_id"] in self.actuator_events:
+                continue
+            self.factory._emit(
+                event["event_type"],
+                event.get("reason") or event["event_type"],
+                source="actuator_watchdog",
+                severity=Severity.WARNING
+                if any(word in event["event_type"] for word in ("fault", "timeout", "rejected"))
+                else Severity.INFO,
+                data=event,
+                event_id=f"ACTUATOR-{event['event_id']}",
+            )
+            self.actuator_events[event["event_id"]] = True
+            if len(self.actuator_events) > 2048:
+                self.actuator_events.pop(next(iter(self.actuator_events)))
+
+    def actuator_snapshot(self):
+        data = dict(self.actuator_state or {})
+        data.pop("events", None)
+        data["fresh"] = bool(data) and time.monotonic() - self.actuator_received_at < 1.0
+        if not data["fresh"]:
+            data.update(
+                state="UNAVAILABLE",
+                reason="No fresh Gazebo watchdog observation",
+                motion_inhibited=None,
+                robot_stopped_confirmed=False,
+            )
+        return data
 
     def observe_safety(self, state: dict, events: list[dict]) -> None:
         from .amr_safety import STATES
@@ -195,6 +239,7 @@ class FactoryTransport:
             "robot_pose": self.robot_pose,
             "energy": self.factory.energy.snapshot(),
             "safety": self.safety_snapshot(),
+            "actuator_watchdog": self.actuator_snapshot(),
             "emergency_active": any(
                 s.state == MachineState.EMERGENCY_STOP for s in self.factory.stations.values()
             ),

@@ -1066,8 +1066,9 @@ class FactorySupervisor:
     def _persist_machine_snapshots(self) -> None:
         if not self.logger:
             return
-        for station in self.stations.values():
-            self.logger.log_machine_snapshot(station.status())
+        self.logger.log_machine_snapshots(
+            station.status() for station in self.stations.values()
+        )
 
     def _stats(
         self, products: list[dict[str, Any]], machines: list[dict[str, Any]]

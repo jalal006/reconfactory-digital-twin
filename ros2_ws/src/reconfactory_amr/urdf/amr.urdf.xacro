@@ -42,10 +42,15 @@
     </sensor>
   </gazebo>
   <gazebo>
+    <plugin filename="reconfactory-actuator-watchdog" name="reconfactory::ActuatorWatchdog">
+      <command_timeout_s>0.30</command_timeout_s><output_period_s>0.02</output_period_s>
+      <startup_zero_confirmation_s>0.30</startup_zero_confirmation_s>
+      <require_explicit_reset_after_timeout>true</require_explicit_reset_after_timeout>
+    </plugin>
     <plugin filename="gz-sim-diff-drive-system" name="gz::sim::systems::DiffDrive">
       <left_joint>left_wheel_joint</left_joint><right_joint>right_wheel_joint</right_joint>
       <wheel_separation>0.345</wheel_separation><wheel_radius>0.10</wheel_radius>
-      <topic>/amr/cmd_vel</topic><odom_topic>/amr/odom</odom_topic><tf_topic>/amr/tf</tf_topic>
+      <topic>/amr/actuator_cmd_vel</topic><odom_topic>/amr/odom</odom_topic><tf_topic>/amr/tf</tf_topic>
       <frame_id>odom</frame_id><child_frame_id>base_footprint</child_frame_id><odom_publish_frequency>30</odom_publish_frequency>
       <max_linear_velocity>0.55</max_linear_velocity><max_angular_velocity>1.0</max_angular_velocity>
       <max_linear_acceleration>0.7</max_linear_acceleration><max_angular_acceleration>1.0</max_angular_acceleration>

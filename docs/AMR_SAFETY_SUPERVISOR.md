@@ -4,6 +4,10 @@ This is ROS 2 supervisory command inhibition for a simulated robot, **not a
 hardware emergency stop or certified industrial functional safety**. It makes no
 claim of compliance with ISO 13849, IEC 61508 or ISO 3691-4.
 
+October 22 update: the [Gazebo actuator deadman](ACTUATOR_DEADMAN_WATCHDOG.md)
+adds downstream protection against loss of this ROS process. The October 16-17
+measurements below remain historical records of the ROS-only architecture.
+
 ## Why A Separate Process
 
 Previously, an AMR manager crash could leave an active Nav2 goal driving the
@@ -28,7 +32,9 @@ Nav2 controller/behaviors -> cmd_vel_nav -> velocity_smoother
                                          |
                                       /cmd_vel
                                          v
-                           ROS-Gazebo bridge -> /amr/cmd_vel -> DiffDrive
+                    bridge -> /amr/cmd_vel_requested -> Gazebo watchdog
+                                         |
+                              /amr/actuator_cmd_vel -> DiffDrive
 ```
 
 The safety node is the only intended final `/cmd_vel` publisher in normal launch.
@@ -49,6 +55,13 @@ its navigating task, no cancellation/emergency, and certain ownership. Backend
 checks are eligible for 0.6 seconds; HTTP calls have a 0.5-second timeout. A steady
 timer sends a lease every 0.1 seconds. A blocked or crashed manager therefore
 cannot renew the independent watchdog indefinitely.
+
+The manager's HTTP calls now run in a bounded background worker, not in its ROS
+executor callbacks. Snapshot receipt times are preserved; retries do not make old
+authorization fresh. This prevents an HTTP round trip from starving safety/status
+subscriptions while retaining the same 0.6-second authorization expiry. Ordered
+status retries and latest-only, expiring backend heartbeats preserve the existing
+transport contract. See [actuator integration findings](ACTUATOR_DEADMAN_WATCHDOG.md#verification-record).
 
 Readiness also requires the gate's own `odometry_fresh` report, not merely an
 available Nav2 action server or odometry received by some other node. Both the
@@ -187,15 +200,17 @@ python3 scripts/run_amr_smoke.py --energy
 python3 scripts/run_safety_campaign.py
 ```
 
-The campaign records three manager crashes, backend loss, gate death, fault
-replanning, charging and an intentionally ungated historical-path comparison.
+The current campaign records three manager crashes, three gate crashes, backend
+loss, fault replanning, charging and normal production. Historical ungated numbers
+are retained as historical evidence, not rerun through the new actuator layer.
 Results and every trial log are under `logs/safety_campaign_<timestamp>/`.
 Per-crash traces are under `logs/amr_smoke/safety_*.json`.
 
-The comparison restores smoother -> `/cmd_vel` and disables the gate **only** when
+The earlier October 17 comparison restored smoother -> `/cmd_vel` and disabled the gate **only** when
 `--unsafe-baseline` is paired with the isolated manager-restart scenario. Both
 launch and manager reject this mode outside domain 73 and a test Gazebo partition.
-It is deliberately unsafe and must never be used for production. The same loaded
+That historical comparison is not part of the current two-layer campaign and must
+never be used for production. The same loaded
 route, initial speed range and stopped thresholds are used for comparison.
 
 For independent manual or named-goal diagnostics, use
@@ -320,13 +335,14 @@ is claimed.
 
 ## Gate-Process Failure And Limits
 
-The installed Gazebo Harmonic DiffDrive implementation retains its last target
+The unchanged Gazebo Harmonic DiffDrive implementation retains its last target
 velocity; its [Gazebo Sim 8 source](https://github.com/gazebosim/gz-sim/blob/gz-sim8/src/systems/diff_drive/DiffDrive.cc)
 does not implement a command-age timeout. No invented timeout plugin parameter is
-added. A killed gate cannot send zero, and there is **no independently enforced
-actuator stop bound** in this implementation. The gate-crash test observes this
-condition, then uses a test-only zero publisher for cleanup. That cleanup publisher
-is not a production watchdog or evidence of fail-safe behavior.
+added to DiffDrive. The October 17 implementation had no downstream watchdog and
+used a test-only cleanup publisher after observing continued motion. The new C++
+watchdog now provides repeated zero commands downstream of the killed ROS gate.
+The gate-crash test now requires automatic stopping and never publishes cleanup
+velocity. See [current implementation and measurements](ACTUATOR_DEADMAN_WATCHDOG.md).
 
 Other limits:
 

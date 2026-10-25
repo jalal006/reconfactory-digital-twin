@@ -7,9 +7,6 @@ import math
 import os
 import sys
 import time
-from collections import deque
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
 from uuid import uuid4
 
 
@@ -49,11 +46,12 @@ def main(args=None):
                 sys.path.insert(0, root)
             from reconfactory.transport import load_station_goals
 
+            from .backend import BackendWorker
             from .navigation import NavigationRunner
 
             self.backend = self.get_parameter("backend_url").value.rstrip("/")
             self.stations = load_station_goals(self.get_parameter("stations_file").value)
-            self.outbox = deque()
+            self.io = BackendWorker(self.backend) if self.backend else None
             self.publisher = self.create_publisher(String, "/reconfactory/amr/status", 10)
             self.tasks = self.create_publisher(String, "/reconfactory/amr/task", 10)
             self.client = ActionClient(self, NavigateToPose, "navigate_to_pose")
@@ -73,13 +71,17 @@ def main(args=None):
                 "rotation_rad": 0.0,
             }
             self.last_odom_stamp = None
-            self.backend_state = None
-            self.backend_checked_at = 0.0
             self.lease_sequence = 0
             self.lease_token = None
             self.safety_state = "UNAVAILABLE"
             self.safety_odometry_fresh = False
             self.safety_at = 0.0
+            self.actuator_state = "UNAVAILABLE"
+            self.actuator_startup_ready = False
+            self.actuator_at = 0.0
+            self.create_subscription(
+                String, "/reconfactory/amr/actuator/state", self.actuator, 1
+            )
             self.nav_status_seen = False
             self.nav_active = True
             self.lease_pub = self.create_publisher(String, "/reconfactory/amr/safety/lease", 1)
@@ -127,7 +129,25 @@ def main(args=None):
                 self.safety_state in {"DISARMED", "AUTHORIZED", "CONTROLLED_HOLD"}
                 and self.safety_odometry_fresh
                 and time.monotonic() - self.safety_at < 1.0
+                and (
+                    self.actuator_state == "ARMED"
+                    or (
+                        self.actuator_state == "STARTUP_INHIBITED"
+                        and self.actuator_startup_ready
+                    )
+                )
+                and time.monotonic() - self.actuator_at < 0.5
             )
+
+        def actuator(self, msg):
+            try:
+                state = json.loads(msg.data)
+                self.actuator_state = state["state"]
+                self.actuator_startup_ready = state.get("startup_ready") is True
+                self.actuator_at = time.monotonic()
+            except (KeyError, ValueError, TypeError):
+                self.actuator_state = "UNAVAILABLE"
+                self.actuator_startup_ready = False
 
         def send_lease(self, mode, token=None, eligible=False, reason=""):
             self.lease_sequence += 1
@@ -149,9 +169,9 @@ def main(args=None):
             )
 
         def lease(self):
-            state = self.backend_state or {}
+            state, observed_at = self.io.snapshot if self.io else ({}, 0.0)
             active, task = state.get("active_task") or {}, self.runner.task
-            fresh = time.monotonic() - self.backend_checked_at < 0.6
+            fresh = time.monotonic() - observed_at < 0.6
             if not fresh:
                 self.send_lease(
                     "FAULT_LATCHED" if self.lease_token else "DISARMED",
@@ -191,6 +211,8 @@ def main(args=None):
                 else:
                     self.send_lease("AUTHORIZED", token)
             else:
+                if eligible:
+                    self.lease_token = None
                 self.send_lease(
                     "DISARMED" if eligible or not active else "CONTROLLED_HOLD",
                     eligible=eligible,
@@ -243,19 +265,11 @@ def main(args=None):
             goal.pose.pose.orientation.w = math.cos(pose["yaw"] / 2)
             return goal
 
-        def http(self, path, payload=None):
-            data = json.dumps(payload).encode() if payload is not None else None
-            request = Request(
-                self.backend + path, data=data, headers={"Content-Type": "application/json"}
-            )
-            with urlopen(request, timeout=0.5) as response:
-                return json.load(response)
-
         def report(self, payload):
             self.send_lease("CONTROLLED_HOLD", reason="Navigation phase/status transition")
             self.publisher.publish(String(data=json.dumps(payload)))
-            if self.backend:
-                self.outbox.append(payload)
+            if self.io and not self.io.enqueue(payload):
+                self.get_logger().error(self.io.error)
             self.get_logger().info(
                 f"{payload['task_id']}: {payload['status']} ({payload['phase']})"
             )
@@ -269,7 +283,9 @@ def main(args=None):
                 if self.backend:
                     if not self.safety_available():
                         raise ValueError("Independent safety gate is latched or unavailable")
-                    state = self.http("/api/transport")
+                    state, observed_at = self.io.snapshot
+                    if time.monotonic() - observed_at >= 0.6:
+                        raise ValueError("Backend authorization is stale")
                     active = state.get("active_task") or {}
                     if not state.get("running") or active.get("cancel_requested"):
                         raise ValueError("Transport is paused or cancelled")
@@ -321,8 +337,9 @@ def main(args=None):
             if not self.backend:
                 return
             try:
-                state = self.http("/api/transport")
-                self.backend_state, self.backend_checked_at = state, time.monotonic()
+                state, observed_at = self.io.snapshot
+                if time.monotonic() - observed_at >= 0.6:
+                    raise RuntimeError(self.io.error or "Backend authorization is stale")
                 active = state.get("active_task") or {}
                 if state.get("energy"):
                     from reconfactory.energy import battery_ros_fields
@@ -373,25 +390,31 @@ def main(args=None):
                     or active.get("cancel_requested")
                     or active.get("status") in {"failed", "cancelled"}
                 ):
+                    if (
+                        task.status not in {"delivered", "failed", "cancelled"}
+                        and not task.cancel_requested
+                    ):
+                        self.get_logger().warning(
+                            f"Cancelling {task.task_id}: "
+                            f"gate={self.safety_state}, actuator={self.actuator_state}, "
+                            f"startup_ready={self.actuator_startup_ready}, "
+                            f"gate_age={time.monotonic() - self.safety_at:.3f}s, "
+                            f"actuator_age={time.monotonic() - self.actuator_at:.3f}s, "
+                            f"odometry_fresh={self.safety_odometry_fresh}, "
+                            f"running={state.get('running')}, "
+                            f"task_matches={active.get('task_id') == task.task_id}, "
+                            f"cancel_requested={active.get('cancel_requested')}, "
+                            f"backend_status={active.get('status')}"
+                        )
                     self.runner.cancel(
                         invalidate_delivery=(
                             active.get("task_id") == task.task_id
                             and active.get("cancel_requested", False)
                         )
                     )
-                # Preserve event order across temporary HTTP failures.
-                while self.outbox:
-                    try:
-                        self.http("/api/transport/status", self.outbox[0])
-                    except HTTPError as exc:
-                        if exc.code != 409:
-                            raise
-                        self.get_logger().warning("Supervisor refused stale transport status")
-                    self.outbox.popleft()
                 pose = self.pose()
                 busy = task and task.status not in {"delivered", "failed", "cancelled"}
-                self.http(
-                    "/api/transport/heartbeat",
+                self.io.set_heartbeat(
                     {
                         "ready": self.client.server_is_ready()
                         and pose is not None
@@ -433,6 +456,10 @@ def main(args=None):
                             )
                             self.runner.registry.seen.add(active["task_id"])
                         return
+                    if self.runner.is_unsubmitted_request(active):
+                        # Readiness can disappear between task creation and submission.
+                        # No goal was sent by this session; wait without claiming an orphan.
+                        return
                     # Lost goal handles cannot prove cancellation. Request a stop
                     # of this single robot's orphan goal, but never authorize replan.
                     self.runner.uncertain = True
@@ -440,8 +467,7 @@ def main(args=None):
                     if self.cancel_orphan.service_is_ready() and not self.orphan_cancel_sent:
                         self.cancel_orphan.call_async(CancelGoal.Request())
                         self.orphan_cancel_sent = True
-                    self.http(
-                        "/api/transport/status",
+                    self.io.enqueue(
                         {
                             **active,
                             "status": "failed",
@@ -449,7 +475,6 @@ def main(args=None):
                         },
                     )
             except Exception as exc:
-                self.backend_checked_at = 0.0
                 self.send_lease(
                     "FAULT_LATCHED" if self.lease_token else "DISARMED",
                     reason="Backend communication failed",
@@ -467,6 +492,8 @@ def main(args=None):
         pass
     finally:
         node.runner.cancel()
+        if node.io:
+            node.io.close()
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()

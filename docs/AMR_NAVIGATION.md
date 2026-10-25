@@ -13,7 +13,8 @@ FactorySupervisor (product, recipe, fault and quality authority)
   -> /reconfactory/amr/task (JSON String)
   -> /reconfactory_amr_manager
   -> NavigateToPose: origin, then destination
-  -> Nav2 -> velocity smoother -> independent safety gate -> /cmd_vel -> Gazebo AMR
+  -> Nav2 -> velocity smoother -> independent safety gate -> /cmd_vel
+  -> Gazebo actuator watchdog -> DiffDrive AMR
   <- /scan + /odom + TF
   -> /reconfactory/amr/status (JSON String)
   -> POST /api/transport/status
@@ -62,7 +63,8 @@ Initial AMCL pose comes from the same `home` config as the robot spawn pose.
 | `/scan` | `sensor_msgs/LaserScan`, Gazebo GPU LiDAR through robot bridge |
 | `/odom` | `nav_msgs/Odometry`, Gazebo wheel odometry through robot bridge |
 | `/reconfactory/amr/nav_cmd_vel` | `geometry_msgs/Twist`, smoother to independent gate |
-| `/cmd_vel` | `geometry_msgs/Twist`, independent gate to DiffDrive bridge |
+| `/cmd_vel` | `geometry_msgs/Twist`, independent gate to Gazebo watchdog bridge |
+| `/reconfactory/amr/actuator/state` | `std_msgs/String`, Gazebo watchdog observation |
 | `/tf`, `/tf_static` | AMCL, DiffDrive bridge, robot_state_publisher |
 | `/joint_states` | `sensor_msgs/JointState`, Gazebo wheel joints |
 | `/clock` | `rosgraph_msgs/Clock`, Gazebo; all navigation nodes use sim time |
@@ -72,6 +74,13 @@ Initial AMCL pose comes from the same `home` config as the robot spawn pose.
 
 The existing camera bridge is separate and retains all camera topics. The AMR
 bridge adds robot topics only, so it does not duplicate the camera bridge.
+
+AMR startup builds `reconfactory_gazebo_watchdog` before Gazebo starts and sources
+its plugin-path environment hook. Fresh ARMED actuator status (or inhibited
+startup status with `startup_ready=true`) is required for
+manager readiness. See [build dependencies, two-layer recovery and gate-crash
+verification](ACTUATOR_DEADMAN_WATCHDOG.md). Fresh zero holds during cancellation
+and charging are valid commands, not watchdog timeouts.
 
 ## Navigation And Map Configuration
 

@@ -70,6 +70,18 @@ def launch_nodes(context):
     ]
     if baseline:
         nodes = nodes[1:]  # Test-only historical command path, never the production default.
+    nodes.append(
+        Node(
+            package="reconfactory_amr",
+            executable="actuator_observer",
+            parameters=[
+                {
+                    "project_root": LaunchConfiguration("project_root"),
+                    "backend_url": LaunchConfiguration("backend_url"),
+                }
+            ],
+        )
+    )
     if LaunchConfiguration("enable_nav2").perform(context).lower() == "true":
         nodes.extend(
             [

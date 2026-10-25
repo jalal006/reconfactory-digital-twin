@@ -238,3 +238,7 @@ Modified documentation: `README.md`, `docs/architecture.md`,
 `docs/AMR_NAVIGATION.md`, `docs/FAULT_AWARE_REPLANNING.md`, `docs/DEMO_SCENARIOS.md`,
 `docs/ROS2_INTEGRATION.md`, `docs/GAZEBO_FALLBACK.md`.
 The transport/energy HTTP contract is documented in `docs/api.md`.
+
+The Gazebo [actuator deadman](ACTUATOR_DEADMAN_WATCHDOG.md) now protects the same
+command path for charging and production. Fresh zero commands while parked at the
+dock keep it healthy; no separate charging command path bypasses either layer.

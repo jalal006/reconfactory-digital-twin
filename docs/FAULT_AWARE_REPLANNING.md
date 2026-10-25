@@ -277,3 +277,8 @@ in `critical_energy`. An unloaded deferred replacement may use the same mission
 slot for charging, then revalidate the station. Routine low planning reserve does
 not interrupt a safe loaded mission. No charging goal runs alongside a production
 or cancellation goal. See [Energy-Aware AMR](ENERGY_AWARE_AMR.md).
+
+The [Gazebo actuator deadman](ACTUATOR_DEADMAN_WATCHDOG.md) distinguishes these
+planned zero-command holds from a missing ROS command stream. It does not become
+another scheduler or count a watchdog stop as delivery. Unexpected stream loss
+requires explicit recovery; planned rerouting continues through the same gate.

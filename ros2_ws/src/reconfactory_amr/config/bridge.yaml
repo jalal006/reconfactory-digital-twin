@@ -14,10 +14,20 @@
   gz_type_name: gz.msgs.Odometry
   direction: GZ_TO_ROS
 - ros_topic_name: /cmd_vel
-  gz_topic_name: /amr/cmd_vel
+  gz_topic_name: /amr/cmd_vel_requested
   ros_type_name: geometry_msgs/msg/Twist
   gz_type_name: gz.msgs.Twist
   direction: ROS_TO_GZ
+- ros_topic_name: /reconfactory/amr/actuator/state
+  gz_topic_name: /amr/actuator_watchdog/state
+  ros_type_name: std_msgs/msg/String
+  gz_type_name: gz.msgs.StringMsg
+  direction: GZ_TO_ROS
+- ros_topic_name: /reconfactory/amr/actuator/command
+  gz_topic_name: /amr/actuator_cmd_vel
+  ros_type_name: geometry_msgs/msg/Twist
+  gz_type_name: gz.msgs.Twist
+  direction: GZ_TO_ROS
 - ros_topic_name: /tf
   gz_topic_name: /amr/tf
   ros_type_name: tf2_msgs/msg/TFMessage

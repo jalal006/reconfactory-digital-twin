@@ -170,6 +170,11 @@ and only updates observational `transport.safety` state.
 
 Production authority, delivery acknowledgement and payload ownership remain in
 their existing components. Planned cancellation inhibits motion without latching;
-unexpected loss latches and cannot be cleared by manager restart. Gate-process
-death itself has no independently enforced actuator timeout. See
+unexpected loss latches and cannot be cleared by manager restart. A C++ Gazebo
+system adds a downstream command-age watchdog:
+`/cmd_vel -> bridge -> /amr/cmd_vel_requested -> ActuatorWatchdog -> /amr/actuator_cmd_vel -> DiffDrive`.
+Gate-process death expires the local steady-clock command age; the Gazebo layer
+latches zero independently of ROS. Its observer reports separate
+`transport.actuator_watchdog` state, with validated explicit recovery.
+See [actuator watchdog](ACTUATOR_DEADMAN_WATCHDOG.md) and
 [policy, verification and limitations](AMR_SAFETY_SUPERVISOR.md).
