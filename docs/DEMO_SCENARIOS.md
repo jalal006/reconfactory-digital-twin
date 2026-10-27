@@ -1,5 +1,10 @@
 # Demo Scenarios
 
+Record separate clips for normal production, rejection, in-flight fault recovery,
+charging, predictive maintenance, manager loss and gate loss. Keep full takes;
+label cuts or time compression in the final overview. Use the current dashboard
+address printed by the launcher and stop each stack before starting another.
+
 ## Fault During AMR Delivery
 
 Run AMR mode and inject Processing A Overheat while a loaded red block is travelling
@@ -60,13 +65,33 @@ python scripts/train_health_model.py
 MAINTENANCE_MODE=ml HEALTH_AWARE_SCHEDULING=1 python scripts/run_factory.py
 ```
 
+For the full Gazebo/AMR recording, use Ubuntu-24.04 and run:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+MAINTENANCE_MODE=ml HEALTH_AWARE_SCHEDULING=1 TRANSPORT_MODE=amr VISION_SOURCE=gazebo bash run_ubuntu.sh
+```
+
+In a second Ubuntu-24.04 terminal, from the repository root:
+
+```bash
+.venv-wsl/bin/python scripts/demo_machine_health.py --machine station_a --scenario bearing --hold-after 40 --hold-seconds 120
+```
+
+This demonstrates choosing B for new work before a hard fault. A critical anomaly
+score with `Fault none` is expected: the score is not a probability of failure.
+See the [GUI-load verification and authorization fix](ML_RECORDING_VERIFICATION_2026-10-27.md).
+
 1. Open the dashboard, press Start and wait for the 12-sample warmup.
 2. Confirm machine cards show `ml_isolation_forest`, then add red blocks.
 3. In another activated terminal, run
-   `python scripts/demo_machine_health.py --machine station_a --scenario bearing`.
-4. Show A's increasing anomaly score and a `predictive_reroute` event choosing B
+   `python scripts/demo_machine_health.py --machine station_a --scenario bearing --hold-after 40 --hold-seconds 120`.
+4. Wait for `Holding simulated sample`, then add a normal red block. Show A's
+   anomaly score and a `predictive_reroute` event choosing B
    for new compatible work before a hard fault. Existing work stays assigned.
-5. Reset afterward: late degradation samples can trigger a real simulated fault.
+5. Stop the sender and launcher afterward. Without the hold option, late
+   degradation samples can trigger a hard simulated fault. Health-aware selection
+   does not clear a latched motion watchdog.
 
 For the reproducible comparison, run
 `python scripts/run_experiment.py --maintenance --seed 42 --ticks 180`.
@@ -99,8 +124,9 @@ aborted run and checks a new delivery after explicit reset.
 For a 45-60 second recording, omit startup and disclose time cuts: show authorized
 loaded travel, the latched dashboard state and physical stop, a rejected reset,
 then explicit recovery and a fresh delivery. Finish with measured inhibition and
-stable-stop timings. State that killing the gate itself does not have an enforced
-actuator timeout; this is simulation command supervision, not certified safety.
+stable-stop timings. The downstream Gazebo watchdog now enforces an actuator
+command timeout if the ROS gate dies; this is simulation command supervision,
+not certified safety. The separate gate-death demonstration below tests it.
 See [architecture, reproducible trials and results](AMR_SAFETY_SUPERVISOR.md).
 ## Gazebo Gate-Death Demonstration
 

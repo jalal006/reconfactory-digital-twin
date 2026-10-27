@@ -121,6 +121,7 @@ supervisor = FactorySupervisor(
     db_path=Path(os.getenv("RECONFACTORY_DB_PATH", str(ROOT / "data" / "factory.db")))
 )
 _simulation_task: asyncio.Task[None] | None = None
+_tick_lock = asyncio.Lock()
 
 
 @asynccontextmanager
@@ -148,10 +149,30 @@ app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 async def _simulation_loop() -> None:
     while True:
         if supervisor.running:
-            supervisor.tick()
+            await _tick_supervisor()
         elif supervisor.transport:
             supervisor.transport.check_timeout()
         await asyncio.sleep(AUTO_TICK_SECONDS / supervisor.simulation_speed)
+
+
+async def _tick_supervisor(steps: int = 1) -> dict[str, Any]:
+    # Serialize ticks, while allowing authorization reads and operator controls
+    # to run during ML inference. Only the event loop mutates factory state.
+    async with _tick_lock:
+        for _ in range(max(1, steps)):
+            if not supervisor.running:
+                break
+            monitor = supervisor.health_monitor
+            predictions = None
+            if monitor.estimator is not None:
+                histories = monitor.record_many(supervisor.health_samples())
+                predictions = await asyncio.to_thread(monitor.predict_histories, histories)
+                # Reset replaces the monitor. Discard work from the old run;
+                # Stop must also take effect before another production tick.
+                if monitor is not supervisor.health_monitor or not supervisor.running:
+                    break
+            supervisor.tick(health_predictions=predictions)
+        return supervisor.snapshot()
 
 
 @app.get("/")
@@ -282,7 +303,7 @@ async def create_product(payload: ProductCreateRequest) -> dict[str, Any]:
 
 @app.post("/api/tick")
 async def tick(payload: TickRequest) -> dict[str, Any]:
-    return supervisor.tick(payload.steps)
+    return await _tick_supervisor(payload.steps)
 
 
 @app.post("/api/speed")

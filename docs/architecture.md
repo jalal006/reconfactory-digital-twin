@@ -178,3 +178,10 @@ latches zero independently of ROS. Its observer reports separate
 `transport.actuator_watchdog` state, with validated explicit recovery.
 See [actuator watchdog](ACTUATOR_DEADMAN_WATCHDOG.md) and
 [policy, verification and limitations](AMR_SAFETY_SUPERVISOR.md).
+
+In the API, ML inference runs on detached telemetry histories outside the event
+loop; factory mutations remain serialized on that loop. Reset discards old-run
+inference results. The AMR manager polls authorization independently of ordered
+status/heartbeat writes, so reporting cannot delay authorization reads. Either
+read or write failure still makes authorization unavailable. See the
+[ML recording follow-up](ML_RECORDING_VERIFICATION_2026-10-27.md).

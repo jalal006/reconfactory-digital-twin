@@ -16,12 +16,26 @@ class HealthMonitor:
         self.histories: dict[str, deque] = {}
 
     def observe(self, point: SensorPoint):
-        history = self.histories.setdefault(point.machine_id, deque(maxlen=WINDOW_SIZE))
-        # Validate before inserting, so an invalid reading cannot poison the window.
-        rule_prediction([point])
-        history.append(point)
+        return self.observe_many([point])[0]
+
+    def observe_many(self, points: list[SensorPoint]):
+        return self.predict_histories(self.record_many(points))
+
+    def record_many(self, points: list[SensorPoint]):
+        # Validate the whole batch before mutating any station history.
+        for point in points:
+            rule_prediction([point])
+        return [self._append(point) for point in points]
+
+    def predict_histories(self, histories):
+        # Histories are detached lists: inference can run outside the API loop.
         return (
-            self.estimator.predict(list(history))
+            self.estimator.predict_many(histories)
             if self.estimator
-            else rule_prediction(list(history))
+            else [rule_prediction(history) for history in histories]
         )
+
+    def _append(self, point):
+        history = self.histories.setdefault(point.machine_id, deque(maxlen=WINDOW_SIZE))
+        history.append(point)
+        return list(history)

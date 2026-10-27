@@ -244,7 +244,7 @@ class FactorySupervisor:
         )
         return product
 
-    def tick(self, steps: int = 1) -> dict[str, Any]:
+    def tick(self, steps: int = 1, *, health_predictions=None) -> dict[str, Any]:
         if self.transport:
             self.transport.check_timeout()
         for _ in range(max(1, steps)):
@@ -253,7 +253,8 @@ class FactorySupervisor:
             self.tick_count += 1
             if not self.transport:
                 self.energy.logical_tick(AUTO_TICK_SECONDS)
-            self._update_machine_health()
+            self._update_machine_health(health_predictions)
+            health_predictions = None
             self._detect_faults()
             self._tick_stations()
             self._detect_faults()
@@ -1008,18 +1009,23 @@ class FactorySupervisor:
             self.logger.log_event(event)
         return event
 
-    def _update_machine_health(self) -> None:
-        for station in self.stations.values():
-            sensors = station.sensors
-            prediction = self.health_monitor.observe(
-                SensorPoint(
-                    station.machine_id,
-                    sensors.temperature_c,
-                    sensors.vibration_mm_s,
-                    sensors.current_a,
-                    sensors.timestamp,
-                )
+    def health_samples(self):
+        return [
+            SensorPoint(
+                station.machine_id,
+                station.sensors.temperature_c,
+                station.sensors.vibration_mm_s,
+                station.sensors.current_a,
+                station.sensors.timestamp,
             )
+            for station in self.stations.values()
+        ]
+
+    def _update_machine_health(self, predictions=None) -> None:
+        stations = list(self.stations.values())
+        if predictions is None:
+            predictions = self.health_monitor.observe_many(self.health_samples())
+        for station, prediction in zip(stations, predictions, strict=True):
             previous = station.health_prediction
             station.health_prediction = prediction
             if previous is None or (previous.status, previous.source) != (

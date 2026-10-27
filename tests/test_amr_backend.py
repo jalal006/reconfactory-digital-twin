@@ -111,3 +111,59 @@ def test_invalid_backend_observation_fails_closed():
     io.cycle()
     assert io.snapshot == ({}, 0.0)
     assert "Invalid backend" in io.error
+
+
+def test_authorization_polling_continues_during_blocked_status_post():
+    entered, release, paused_read = threading.Event(), threading.Event(), threading.Event()
+    running = [True]
+
+    def request(path, payload=None):
+        if path.endswith("/status"):
+            entered.set()
+            assert release.wait(3)
+        if path == "/api/transport" and not running[0]:
+            paused_read.set()
+        return {"running": running[0]}
+
+    io = BackendWorker("unused", request=request)
+    try:
+        io.enqueue({"id": 1})
+        assert entered.wait(2)
+        running[0] = False
+        assert paused_read.wait(2), "Status posting blocked fresh authorization reads"
+        assert io.snapshot[0] == {"running": False}
+    finally:
+        release.set()
+        io.close()
+    assert not io.thread.is_alive() and not io.writer.is_alive()
+
+
+def test_failed_status_post_stays_unavailable_despite_successful_poll():
+    failing = [True]
+
+    def request(path, payload=None):
+        if path.endswith("/status") and failing[0]:
+            raise TimeoutError("status write failed")
+        return {"running": True}
+
+    io = BackendWorker("unused", request=request, start=False)
+    io.enqueue({"id": 1})
+    io.flush()
+    io.poll()
+    assert io.snapshot == ({}, 0.0)
+    assert io.pending == {"id": 1}
+    failing[0] = False
+    io.flush()
+    assert io.snapshot[0] == {"running": True}
+
+
+def test_failed_poll_stays_unavailable_after_successful_write():
+    def request(path, payload=None):
+        if path == "/api/transport":
+            raise TimeoutError("read failed")
+        return {}
+
+    io = BackendWorker("unused", request=request, start=False)
+    io.enqueue({"id": 1})
+    io.cycle()
+    assert io.snapshot == ({}, 0.0)

@@ -515,9 +515,17 @@ See [ROS 2 integration](docs/ROS2_INTEGRATION.md) for command examples.
 
 ## Tests
 
+Latest verification (October 27, 2026): **376 Python tests passed on Ubuntu/WSL**,
+with Ruff lint/format and all 20 browser scenarios passing. ML inference now runs
+outside the API event loop, and AMR authorization polling is independent of status
+reporting. A live Gazebo GUI run with additional dashboard traffic selected B
+before A faulted and completed through real camera inspection to Accepted. A
+separate backend-outage test still stopped, retained its payload and required
+explicit recovery. See the [latest results and scope](docs/ML_RECORDING_VERIFICATION_2026-10-27.md).
+
 Previous regression baseline (October 18, 2026): **316 Python tests passed on
 Windows and WSL**, preserving the 276-test baseline; Ruff lint/format passed.
-The browser harness passes nine movement, one health-card, two replanning, two
+That browser harness passed nine movement, one health-card, two replanning, two
 energy and three safety-indicator scenarios (executed in V8 locally; Node in CI).
 Three live manager-loss trials confirmed stable stops in **1.005-1.067 seconds**
 without manager restart. Backend-loss stopping and explicit recovery also passed.
@@ -534,9 +542,9 @@ after gate restart and completed a new delivery after explicit recovery.
 Manager loss, backend outage, fault replanning, charging and normal camera-backed
 production also passed. Station snapshots now use one atomic SQLite transaction,
 reducing the backend disk stalls found during recovery. The full Windows Python
-and Ubuntu Python suites pass **367 tests** each, with Ruff lint/format and all
+and Ubuntu Python suites passed **367 tests** each, with Ruff lint/format and all
 20 browser scenarios passing. See the
-[current results, failed attempts and limitations](docs/RECOVERY_VERIFICATION_2026-10-24.md).
+[October 24–25 results, failed attempts and limitations](docs/RECOVERY_VERIFICATION_2026-10-24.md).
 
 ```bash
 python -m pytest
@@ -645,6 +653,7 @@ docs/              Technical documentation
 - [Fault model](docs/fault_model.md)
 - [OPC UA](docs/OPC_UA.md)
 - [Demo scenarios](docs/DEMO_SCENARIOS.md)
+- [ML responsiveness fix and GUI verification](docs/ML_RECORDING_VERIFICATION_2026-10-27.md)
 
 ## Limitations
 

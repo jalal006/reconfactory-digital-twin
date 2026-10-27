@@ -78,12 +78,23 @@ class MLHealthEstimator:
         return np.clip((raw - scale["healthy_reference"]) / scale["span"], 0, 1)
 
     def predict(self, history: list[SensorPoint]) -> HealthPrediction:
-        row = extract_features(history, self.window)
-        if row is None:
-            return rule_prediction(
+        return self.predict_many([history])[0]
+
+    def predict_many(self, histories: list[list[SensorPoint]]) -> list[HealthPrediction]:
+        """Score all ready station windows in one forest traversal."""
+        rows = [extract_features(history, self.window) for history in histories]
+        ready = [row for row in rows if row is not None]
+        scores = iter(self.scores(np.stack(ready))) if ready else iter(())
+        return [
+            rule_prediction(
                 history, f"ML warmup: {len(history)}/{self.window} samples; rule fallback"
             )
-        anomaly = float(self.scores(row.reshape(1, -1))[0])
+            if row is None
+            else self._prediction(history, row, float(next(scores)))
+            for history, row in zip(histories, rows, strict=True)
+        ]
+
+    def _prediction(self, history, row, anomaly) -> HealthPrediction:
         status = health_status(anomaly)
         # Signal deltas are descriptive evidence, not model feature attribution.
         reasons = [

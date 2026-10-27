@@ -23,14 +23,17 @@ class BackendWorker:
         self.heartbeat = None
         self.sent_heartbeat = None
         self.overflow = False
+        self.write_failed = False
         self.stop = threading.Event()
         self.thread = threading.Thread(target=self._run, daemon=True)
+        self.writer = threading.Thread(target=self._run_writes, daemon=True)
         if start:
             self.thread.start()
+            self.writer.start()
 
     @property
     def snapshot(self):
-        return ({}, 0.0) if self.overflow else self._snapshot
+        return ({}, 0.0) if self.overflow or self.write_failed else self._snapshot
 
     def _request(self, path, payload=None):
         req = Request(
@@ -55,6 +58,11 @@ class BackendWorker:
         self.heartbeat = (copy.deepcopy(payload), self.clock())
 
     def cycle(self):
+        """One deterministic read/write cycle for standalone diagnostics."""
+        self.poll()
+        self.flush()
+
+    def poll(self):
         if self.overflow:
             return
         try:
@@ -62,6 +70,16 @@ class BackendWorker:
             if not isinstance(state, dict):
                 raise ValueError("Invalid backend transport observation")
             self._snapshot = (state, self.clock())
+            if not self.write_failed:
+                self.error = ""
+        except Exception as exc:
+            self._snapshot = ({}, 0.0)
+            self.error = str(exc)
+
+    def flush(self):
+        if self.overflow:
+            return
+        try:
             if self.pending is None:
                 try:
                     self.pending = self.statuses.get_nowait()
@@ -80,16 +98,22 @@ class BackendWorker:
                 if self.clock() - created_at < 0.5:
                     self.request("/api/transport/heartbeat", payload)
                 self.sent_heartbeat = heartbeat
-            self.error = ""
+            self.write_failed = False
         except Exception as exc:
-            self._snapshot = ({}, 0.0)
+            self.write_failed = True
             self.error = str(exc)
 
     def _run(self):
         while not self.stop.wait(0.1):
-            self.cycle()
+            self.poll()
+
+    def _run_writes(self):
+        while not self.stop.wait(0.1):
+            self.flush()
 
     def close(self):
         self.stop.set()
         if self.thread.is_alive():
             self.thread.join(timeout=2)
+        if self.writer.is_alive():
+            self.writer.join(timeout=2)

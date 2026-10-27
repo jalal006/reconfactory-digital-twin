@@ -58,7 +58,7 @@ def test_invalid_features_do_not_poison_monitor():
     monitor = HealthMonitor()
     with pytest.raises(ValueError):
         monitor.observe(SensorPoint("a", float("nan"), 0.1, 1))
-    assert not monitor.histories["a"]
+    assert not monitor.histories.get("a")
     with pytest.raises(ValueError):
         extract_features([SensorPoint("a", 30, 0.1, 1), SensorPoint("b", 30, 0.1, 1)])
 
@@ -68,6 +68,74 @@ def test_seeded_sequences_and_training(estimator):
     other = train_model()
     rows = feature_rows(generate_sequence(seed=900))
     np.testing.assert_allclose(estimator.scores(rows), other.scores(rows))
+
+
+def test_batch_predictions_match_individual_windows(estimator, monkeypatch):
+    histories = [
+        generate_sequence("a", samples=30),
+        generate_sequence("b", samples=3),
+        generate_sequence("c", samples=90, scenario="bearing"),
+    ]
+    expected = [estimator.predict(history) for history in histories]
+    calls = []
+    original = estimator.scores
+
+    def scores(rows):
+        calls.append(len(rows))
+        return original(rows)
+
+    monkeypatch.setattr(estimator, "scores", scores)
+    assert estimator.predict_many(histories) == expected
+    assert calls == [2]
+
+
+def test_batch_monitor_keeps_station_histories_separate(artifact):
+    batch = HealthMonitor("ml", artifact)
+    single = HealthMonitor("ml", artifact)
+    sequences = [generate_sequence(name, samples=20) for name in ("a", "b")]
+    for points in zip(*sequences, strict=True):
+        assert batch.observe_many(list(points)) == [single.observe(p) for p in points]
+    before = {name: list(history) for name, history in batch.histories.items()}
+    with pytest.raises(ValueError):
+        batch.observe_many([SensorPoint("a", 35, 0.1, 1), SensorPoint("b", float("nan"), 0, 1)])
+    assert {name: list(history) for name, history in batch.histories.items()} == before
+
+
+def test_recording_sender_holds_before_late_bearing_fault(monkeypatch):
+    import scripts.demo_machine_health as demo
+
+    clock = [0.0]
+    sent = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b"{}"
+
+    def send(request, timeout):
+        sent.append(json.loads(request.data))
+        return Response()
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["demo", "--scenario", "bearing", "--hold-after", "40", "--hold-seconds", "3"],
+    )
+    monkeypatch.setattr(demo, "urlopen", send)
+    monkeypatch.setattr(demo.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(
+        demo.time, "sleep", lambda seconds: clock.__setitem__(0, clock[0] + seconds)
+    )
+    demo.main()
+    assert len(sent) == 44
+    assert all(point == sent[39] for point in sent[40:])
+    assert max(point["vibration_mm_s"] for point in sent) < 3.2
+    assert generate_sequence(samples=90, scenario="bearing")[-1].vibration_mm_s > 3.2
 
 
 @pytest.mark.parametrize("scenario", ["bearing", "overheating", "mechanical_load"])
