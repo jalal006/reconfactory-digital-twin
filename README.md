@@ -18,15 +18,15 @@ behind each outcome.
 
 ## Watch The Demo
 
-[![ReConFactory dashboard and Gazebo simulation — open the video overview](docs/media/preview.jpg)](docs/media/reconfactory-overview.mp4)
+https://github.com/user-attachments/assets/ef99f030-1622-4aef-a915-333e9164b996
 
-**[Open the 3:32 overview](docs/media/reconfactory-overview.mp4)** ·
+**[Open the 3:32 overview](https://github.com/user-attachments/assets/ef99f030-1622-4aef-a915-333e9164b996)** ·
 [All recordings and chapter times](docs/media/README.md) ·
 [Run the demos yourself](docs/DEMO_SCENARIOS.md)
 
 The overview combines the eight recordings below. Simulation clips play at 2×
-their supplied speed; test results remain at 1×. All videos are silent. Open the
-MP4 file and use GitHub's raw/download control if inline playback is unavailable.
+their supplied speed; test results remain at 1×. All videos are silent. The
+overview plays above; individual recordings below remain downloadable MP4 files.
 
 | Recording | Duration | What to look for |
 |---|---:|---|

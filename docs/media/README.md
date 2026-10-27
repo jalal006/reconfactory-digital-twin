@@ -1,8 +1,8 @@
 # Video gallery
 
-[Open the complete overview](reconfactory-overview.mp4) · [Project README](../../README.md)
+[Open the complete overview](https://github.com/user-attachments/assets/ef99f030-1622-4aef-a915-333e9164b996) · [Project README](../../README.md)
 
-![Gazebo and the live factory dashboard](preview.jpg)
+https://github.com/user-attachments/assets/ef99f030-1622-4aef-a915-333e9164b996
 
 The 3:32 overview assembles eight screen recordings supplied by the project
 author on 27 October 2026. All videos are silent H.264 MP4 at 1600×1000.
