@@ -6,11 +6,44 @@
 [![Tests](https://github.com/jalal006/reconfactory-digital-twin/actions/workflows/tests.yml/badge.svg)](https://github.com/jalal006/reconfactory-digital-twin/actions/workflows/tests.yml)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-A fault-aware smart factory digital twin with Gazebo camera perception,
-ROS 2 / OpenCV inspection, optional Nav2 autonomous robot transport, an animated
-browser dashboard, ML-based predictive maintenance, fault-aware in-flight AMR
-replanning, battery-aware autonomous charging, independent ROS command gating,
-a Gazebo-side actuator deadman watchdog, and SQLite analytics.
+A robotics and AI factory simulation that connects **perception, autonomous
+transport, production scheduling and fault recovery**. A Nav2 robot moves products
+through camera inspection, processing and quality control while a FastAPI
+dashboard shows the live factory, machine health and decisions.
+
+ReConFactory demonstrates health-aware station selection with Isolation Forest,
+replanning after a destination fault, autonomous charging, and independent ROS
+and Gazebo motion watchdogs with explicit recovery. SQLite records the events
+behind each outcome.
+
+## Watch The Demo
+
+[![ReConFactory dashboard and Gazebo simulation — open the video overview](docs/media/preview.jpg)](docs/media/reconfactory-overview.mp4)
+
+**[Open the 3:32 overview](docs/media/reconfactory-overview.mp4)** ·
+[All recordings and chapter times](docs/media/README.md) ·
+[Run the demos yourself](docs/DEMO_SCENARIOS.md)
+
+The overview combines the eight recordings below. Simulation clips play at 2×
+their supplied speed; test results remain at 1×. All videos are silent. Open the
+MP4 file and use GitHub's raw/download control if inline playback is unavailable.
+
+| Recording | Duration | What to look for |
+|---|---:|---|
+| [Normal production](docs/media/01-normal-production.mp4) | 0:57 | Pickup, inspection, processing and Accepted output |
+| [Quality rejection](docs/media/02-quality-rejection.mp4) | 1:04 | A final-quality defect reaches Reject output |
+| [Fault-aware replanning](docs/media/03-fault-replanning.mp4) | 1:04 | Processing A faults; work continues through B |
+| [Charging and resumption](docs/media/04-charging-and-resumption.mp4) | 1:06 | Charger visit followed by resumed production |
+| [Predictive maintenance](docs/media/05-predictive-maintenance.mp4) | 0:49 | Abnormal A telemetry favors B before a hard fault |
+| [Gate-crash recovery](docs/media/06-gate-crash-recovery.mp4) | 0:51 | Actuator latch and the verifier's recovery results |
+| [Python and browser tests](docs/media/07-python-browser-tests.mp4) | 0:18 | 376 Python tests, Ruff and 20 browser scenarios |
+| [C++ watchdog tests](docs/media/08-cpp-watchdog-tests.mp4) | 0:10 | Zero failures in the colcon policy-test report |
+
+These are simulator recordings. The battery model is accelerated, anomaly scores
+are not failure probabilities, and motion supervision is not certified hardware
+safety. [Measured results and limits](docs/ML_RECORDING_VERIFICATION_2026-10-27.md).
+
+## Robot Transport
 
 An optional **single-AMR transport mode** adds a differential-drive Gazebo robot,
 LiDAR, AMCL localization and Nav2 delivery tasks. The supervisor waits for actual
